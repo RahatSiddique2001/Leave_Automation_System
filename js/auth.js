@@ -1,87 +1,218 @@
 // js/auth.js
-import { auth, db } from "./firebase-init.js";
+// Complete auth UI module: signup, signin, signout, onAuthStateChanged UI updates.
+// Exports: initAuthHandlers()
+
+import { auth, db } from './firebase-init.js';
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  updateProfile,
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 
-import { doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+import {
+  doc,
+  setDoc,
+  getDoc,
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
-export function initAuthHandlers() {
-  const btnSignup = document.getElementById('btn-signup');
-  const btnLogin = document.getElementById('btn-login');
-  const btnLogout = document.getElementById('btn-logout');
-  const authMsg = document.getElementById('auth-msg');
+/* ---------- UI helpers ---------- */
+function el(id) {
+  return document.getElementById(id);
+}
 
-  const showMsg = (m, type='danger') => {
-    authMsg.innerHTML = `<div class="alert alert-${type}">${m}</div>`;
-    setTimeout(()=> authMsg.innerHTML = '', 2500);
-  };
+function showAuthMsg(text, isError = false) {
+  const elMsg = el('auth-msg');
+  if (elMsg) {
+    elMsg.textContent = text;
+    elMsg.style.color = isError ? 'red' : 'green';
+    return;
+  }
+  console.log((isError ? 'ERROR: ' : '') + text);
+}
 
-  // Signup
-  btnSignup.addEventListener('click', async () => {
-    const email = document.getElementById('email').value.trim();
-    const password = document.getElementById('password').value;
-    const name = document.getElementById('fullName').value.trim();
-    const role = document.getElementById('role').value;
-    const teacherId = document.getElementById('teacherId').value.trim();
+function clearAuthMsg() {
+  const elMsg = el('auth-msg');
+  if (elMsg) elMsg.textContent = '';
+}
 
-    if (!email || !password || !name) { showMsg('Name, email and password required'); return; }
+function updateUserArea(user, profile) {
+  const area = el('user-area');
+  if (!area) return;
+  if (!user) {
+    area.innerHTML = `<div class="text-muted">Not logged in</div>`;
+    return;
+  }
+  const displayName = profile?.fullName || user.displayName || user.email;
+  const teacherIdHtml = profile?.teacherId ? `<div><small>Teacher ID: ${profile.teacherId}</small></div>` : '';
+  const roleHtml = profile?.role ? `<div><small>Role: ${profile.role}</small></div>` : '';
+  area.innerHTML = `
+    <div class="card p-2">
+      <strong>${displayName}</strong>
+      ${teacherIdHtml}
+      ${roleHtml}
+    </div>
+  `;
+}
 
-    try {
-      const cred = await createUserWithEmailAndPassword(auth, email, password);
-      const uid = cred.user.uid;
-      // save profile in users collection
-      await setDoc(doc(db, 'users', uid), {
-        name, email, role, teacherId, rank: ''
-      });
-      showMsg('Signup successful', 'success');
-      // hide modal
-      setTimeout(()=> bootstrap.Modal.getInstance(document.getElementById('authModal')).hide(), 700);
-    } catch (err) {
-      showMsg(err.message);
+/* ---------- Core flows ---------- */
+async function doSignUp() {
+  clearAuthMsg();
+  const fullName = el('fullName')?.value.trim() || '';
+  const teacherId = el('teacherId')?.value.trim() || '';
+  const role = el('role')?.value || 'teacher';
+  const email = el('email')?.value.trim() || '';
+  const password = el('password')?.value || '';
+
+  console.log('Sign up attempt', { email, role, teacherId, fullName });
+
+  if (!email || !password) {
+    showAuthMsg('Email and password required', true);
+    return;
+  }
+  if (password.length < 6) {
+    showAuthMsg('Password must be at least 6 characters', true);
+    return;
+  }
+
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    console.log('createUserWithEmailAndPassword success', cred);
+
+    // update displayName in auth profile (optional)
+    if (fullName) {
+      try {
+        await updateProfile(cred.user, { displayName: fullName });
+        console.log('auth profile displayName set');
+      } catch (e) {
+        console.warn('Failed to set displayName in auth profile', e);
+      }
     }
-  });
 
-  // Login
-  btnLogin.addEventListener('click', async () => {
-    const email = document.getElementById('email').value.trim();
-    const password = document.getElementById('password').value;
-    if (!email || !password) { showMsg('Email & password required'); return; }
+    // Save a user profile doc in Firestore (users/{uid})
+    const userDocRef = doc(db, 'users', cred.user.uid);
+    await setDoc(userDocRef, {
+      uid: cred.user.uid,
+      email: email,
+      fullName: fullName || null,
+      teacherId: teacherId || null,
+      role: role || 'teacher',
+      createdAt: serverTimestamp()
+    });
+    console.log('User profile saved to Firestore');
 
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-      showMsg('Logged in', 'success');
-      setTimeout(()=> bootstrap.Modal.getInstance(document.getElementById('authModal')).hide(), 700);
-    } catch (err) {
-      showMsg(err.message);
+    showAuthMsg('Account created and profile saved!');
+    // close modal if present
+    const modalEl = document.getElementById('authModal');
+    if (modalEl) {
+      const bs = bootstrap.Modal.getInstance(modalEl);
+      if (bs) bs.hide();
     }
-  });
+  } catch (err) {
+    console.error('Sign up error', err);
+    // Firebase error codes come with messages; show friendly fallback
+    showAuthMsg(err?.message || 'Sign up failed', true);
+  }
+}
 
-  // Logout
-  btnLogout.addEventListener('click', async () => {
+async function doSignIn() {
+  clearAuthMsg();
+  const email = el('email')?.value.trim() || '';
+  const password = el('password')?.value || '';
+
+  console.log('Sign in attempt', { email });
+
+  if (!email || !password) {
+    showAuthMsg('Email and password required', true);
+    return;
+  }
+
+  try {
+    const cred = await signInWithEmailAndPassword(auth, email, password);
+    console.log('signInWithEmailAndPassword success', cred);
+
+    showAuthMsg('Signed in successfully!');
+    // close modal if present
+    const modalEl = document.getElementById('authModal');
+    if (modalEl) {
+      const bs = bootstrap.Modal.getInstance(modalEl);
+      if (bs) bs.hide();
+    }
+  } catch (err) {
+    console.error('Sign in error', err);
+    showAuthMsg(err?.message || 'Sign in failed', true);
+  }
+}
+
+async function doSignOut() {
+  try {
     await signOut(auth);
-  });
+    console.log('User signed out');
+    showAuthMsg('Signed out');
+  } catch (err) {
+    console.error('Sign out error', err);
+    showAuthMsg('Sign out failed', true);
+  }
+}
 
-  // Auth state changes
-  onAuthStateChanged(auth, async user => {
-    const userArea = document.getElementById('user-area');
-    if (user) {
-      // show logout button and hide login buttons inside modal
-      document.getElementById('btn-logout').style.display = 'inline-block';
-      document.getElementById('btn-login').style.display = 'none';
-      document.getElementById('btn-signup').style.display = 'none';
-      // load profile
-      const snap = await getDoc(doc(db, 'users', user.uid));
-      const data = snap.exists() ? snap.data() : { name: 'User', role: 'teacher' };
-      userArea.innerHTML = `<div class="alert alert-success">Logged in as <strong>${data.name}</strong> (${data.role})</div>`;
-    } else {
-      userArea.innerHTML = '';
-      document.getElementById('btn-logout').style.display = 'none';
-      document.getElementById('btn-login').style.display = 'inline-block';
-      document.getElementById('btn-signup').style.display = 'inline-block';
+/* ---------- Attach handlers and auth state listener ---------- */
+export function initAuthHandlers() {
+  console.log('initAuthHandlers running');
+
+  const btnSignup = el('btn-signup');
+  const btnLogin = el('btn-login');
+  const btnLogout = el('btn-logout');
+
+  if (btnSignup) btnSignup.addEventListener('click', doSignUp);
+  if (btnLogin) btnLogin.addEventListener('click', doSignIn);
+  if (btnLogout) btnLogout.addEventListener('click', doSignOut);
+
+  // Observe auth state & update UI
+  onAuthStateChanged(auth, async (user) => {
+    console.log('onAuthStateChanged user =', user);
+
+    // set logout/login button visibility
+    if (btnLogout) btnLogout.style.display = user ? '' : 'none';
+    if (btnLogin) btnLogin.style.display = user ? 'none' : '';
+    if (btnSignup) btnSignup.style.display = user ? 'none' : '';
+
+    // update user-area & approvals link visibility
+    if (!user) {
+      updateUserArea(null, null);
+      try {
+        const approvalsLink = document.getElementById('approvals-link');
+        if (approvalsLink) approvalsLink.style.display = 'none';
+      } catch (e) { }
+      return;
     }
+
+    // fetch profile from Firestore, if exists
+    let profile = null;
+    try {
+      const udocRef = doc(db, 'users', user.uid);
+      const snap = await getDoc(udocRef);
+      if (snap.exists()) profile = snap.data();
+    } catch (e) {
+      console.warn('Failed to read user profile on auth change', e);
+    }
+
+    // Update user area display
+    updateUserArea(user, profile);
+
+    // Show/hide Approvals link based on role
+    try {
+      const approvalsLink = document.getElementById('approvals-link');
+      const role = profile?.role || null;
+      if (approvalsLink) {
+        approvalsLink.style.display = (role === 'hod' || role === 'registrar') ? 'inline-block' : 'none';
+      }
+    } catch (e) {
+      console.warn('Failed to toggle approvals link', e);
+    }
+
+    // Clear any previous messages after showing welcome briefly
+    setTimeout(() => clearAuthMsg(), 3000);
   });
 }

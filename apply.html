@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>Apply for Leave</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+
+<body>
+    <nav class="navbar navbar-expand bg-light">
+        <div class="container">
+            <a class="navbar-brand" href="index.html">Leave System</a>
+            <div>
+                <a href="index.html" class="btn btn-outline-secondary">Home</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container py-4">
+        <h2>Apply for Leave</h2>
+
+        <div id="apply-msg" class="mb-3" aria-live="polite"></div>
+
+        <form id="leaveForm" class="mb-4">
+            <div class="mb-3">
+                <label class="form-label">Leave type</label>
+                <select id="leaveType" class="form-control" required>
+                    <option value="Casual">Casual</option>
+                    <option value="Medical">Medical</option>
+                    <option value="Maternity">Maternity</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Start date</label>
+                    <input id="startDate" type="date" class="form-control" required />
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">End date</label>
+                    <input id="endDate" type="date" class="form-control" required />
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Reason</label>
+                <textarea id="reason" class="form-control" rows="4" required></textarea>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Route</label>
+                <select id="route" class="form-control">
+                    <option value="via_hod">Via HOD</option>
+                    <option value="direct_registrar">Direct to Registrar</option>
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Attach document (optional)</label>
+                <input id="attachment" type="file" class="form-control" />
+            </div>
+
+            <button id="btnSubmitLeave" class="btn btn-primary">Submit Request</button>
+        </form>
+
+        <div id="my-requests-list"></div>
+    </div>
+
+    <script type="module">
+        import { initApplyPage } from './js/apply.js';
+        initApplyPage();
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>

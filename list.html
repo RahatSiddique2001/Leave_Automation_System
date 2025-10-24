@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>My Requests - Leave System</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+
+<body>
+    <nav class="navbar navbar-expand bg-light">
+        <div class="container">
+            <a class="navbar-brand" href="index.html">Leave System</a>
+            <div>
+                <a href="apply.html" class="btn btn-primary ms-2">Apply</a>
+                <a href="approvals.html" class="btn btn-warning ms-2">Approvals</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container py-4">
+        <h2>My Leave Requests</h2>
+        <div id="list-msg" class="mb-3" aria-live="polite"></div>
+
+        <div id="requests-container">Loading...</div>
+
+        <!-- Request details modal -->
+        <div class="modal fade" id="requestModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Request Details</h5>
+                        <button class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="modal-request-full"></div>
+
+                        <div class="mt-3">
+                            <label class="form-label">Your comment (optional)</label>
+                            <textarea id="userComment" class="form-control" rows="2"
+                                placeholder="Add a note (optional)"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <!-- Cancel is shown only for pending requests and only to the requester (JS will toggle enable/visibility) -->
+                        <button id="btnCancelRequest" class="btn btn-outline-danger">Cancel Request</button>
+                        <button id="btnCloseModal" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- end modal -->
+    </div>
+
+    <script type="module">
+        // The page's behavior is in js/list.js
+        import { initListPage } from './js/list.js';
+        initListPage();
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>
