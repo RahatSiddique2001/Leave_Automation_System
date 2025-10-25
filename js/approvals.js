@@ -45,47 +45,56 @@ function formatDateField(d) {
 }
 
 /* ---------- Load pending requests ---------- */
-async function fetchPendingRequests() {
+// Load only relevant pending requests for the current approver role
+async function fetchPendingRequests(role) {
     const listEl = document.getElementById('requests-list');
     if (!listEl) return;
     listEl.innerHTML = 'Loading...';
 
     try {
-        // Show requests that are pending either at HOD or Registrar.
-        // Approver role check is done separately; rules will ultimately control access.
+        let whereClause;
+        if (role === 'hod') {
+            whereClause = where('currentStage', '==', 'pending_hod');
+        } else if (role === 'registrar') {
+            whereClause = where('currentStage', '==', 'pending_registrar');
+        } else {
+            // non-approver: nothing to show
+            listEl.innerHTML = '<div class="text-muted">You are not an approver.</div>';
+            return;
+        }
+
+        // build query: status must be pending AND currentStage matches role
         const q = query(
             collection(db, 'requests'),
             where('status', '==', 'pending'),
+            whereClause,
             orderBy('createdAt', 'desc')
         );
-        const snaps = await getDocs(q);
 
+        const snaps = await getDocs(q);
         if (snaps.empty) {
-            listEl.innerHTML = '<div class="text-muted">No pending requests.</div>';
+            listEl.innerHTML = '<div class="text-muted">No pending requests for your role.</div>';
             return;
         }
 
         let html = '<div class="list-group">';
-        snaps.forEach(snap => {
-            const d = snap.data();
+        snaps.forEach(s => {
+            const d = s.data();
             const created = formatDateField(d.createdAt);
-            // summary item with a Review button
             html += `
         <div class="list-group-item">
-          <div class="d-flex justify-content-between align-items-start">
+          <div class="d-flex justify-content-between">
             <div>
               <strong>${d.fullName || d.email}</strong>
               <div><small>${d.type} — ${d.startDate} → ${d.endDate}</small></div>
-              <div class="mt-1"><small>${d.reason}</small></div>
             </div>
-            <div class="text-end">
-              <div><span class="badge bg-warning text-dark">${d.currentStage || 'pending'}</span></div>
-              <div class="mt-2">
-                <button class="btn btn-sm btn-outline-primary" data-docid="${snap.id}" onclick="window.__approvals_openModal(event)">Review</button>
-              </div>
+            <div>
+              <button class="btn btn-sm btn-outline-primary me-2" data-docid="${s.id}" onclick="window.__approvals_openModal(event)">Review</button>
+              <span class="badge bg-warning text-dark">${d.currentStage || d.status}</span>
             </div>
           </div>
-          <div class="text-muted mt-2"><small>Submitted: ${created}</small></div>
+          <div class="mt-2"><small>${d.reason}</small></div>
+          <div class="text-muted"><small>Submitted: ${created}</small></div>
         </div>
       `;
         });
@@ -96,6 +105,7 @@ async function fetchPendingRequests() {
         listEl.innerHTML = '<div class="text-danger">Failed to load requests</div>';
     }
 }
+
 
 /* ---------- Modal open (exposed globally for inline onclick) ---------- */
 window.__approvals_openModal = async function (evt) {
@@ -158,11 +168,9 @@ async function handleAction(action, bsModal) {
         return;
     }
 
-    // Read approver comment
     const comment = (document.getElementById('approverComment')?.value || '').trim();
     const reqRef = doc(db, 'requests', currentRequestDoc.id);
 
-    // Verify current user's role from users/{uid}
     try {
         const udoc = await getDoc(doc(db, 'users', currentUser.uid));
         const role = udoc.exists() ? udoc.data().role : null;
@@ -171,7 +179,7 @@ async function handleAction(action, bsModal) {
             return;
         }
 
-        // If action is forward: only HOD should forward and only if currentStage == 'pending_hod'
+        // HOD forwarding: explicit forward (keeps status pending, moves to registrar)
         if (action === 'forward') {
             if (role !== 'hod') {
                 showMsg('Only HOD can forward to Registrar', true);
@@ -189,7 +197,7 @@ async function handleAction(action, bsModal) {
                 approverComment: comment || null,
                 updatedAt: serverTimestamp(),
                 history: arrayUnion({
-                    ts: serverTimestamp(),
+                    ts: new Date().toISOString(),
                     actorUid: currentUser.uid,
                     action: 'forwarded_to_registrar',
                     comment: comment || null
@@ -198,60 +206,103 @@ async function handleAction(action, bsModal) {
 
             showMsg('Forwarded to Registrar');
             bsModal.hide();
-            await fetchPendingRequests();
+            await fetchPendingRequests(role);
             return;
         }
 
-        // If action is approve/reject: approver sets final status (policy: registrar is final approver; HOD may approve but policy might require forwarding)
-        if (action === 'approved' || action === 'rejected') {
-            // For stricter enforcement: only registrar can finalize. Here we allow both but you can tighten later.
+        // Approve action:
+        if (action === 'approved') {
+            if (role === 'hod') {
+                // HOD approval moves the request to registrar for final decision
+                await updateDoc(reqRef, {
+                    currentStage: 'pending_registrar',
+                    approverUid: currentUser.uid,
+                    approverComment: comment || null,
+                    updatedAt: serverTimestamp(),
+                    history: arrayUnion({
+                        ts: new Date().toISOString(),
+                        actorUid: currentUser.uid,
+                        action: 'approved_by_hod_forwarded_to_registrar',
+                        comment: comment || null
+                    })
+                });
+
+                showMsg('Approved by HOD and forwarded to Registrar');
+                bsModal.hide();
+                await fetchPendingRequests(role); // refresh HOD list (this item will vanish for HOD)
+                return;
+            } else if (role === 'registrar') {
+                // Registrar final approval -> finalize
+                await updateDoc(reqRef, {
+                    status: 'approved',
+                    currentStage: 'finalized',
+                    approverUid: currentUser.uid,
+                    approverComment: comment || null,
+                    updatedAt: serverTimestamp(),
+                    history: arrayUnion({
+                        ts: new Date().toISOString(),
+                        actorUid: currentUser.uid,
+                        action: 'approved_by_registrar',
+                        comment: comment || null
+                    })
+                });
+
+                showMsg('Request approved (final)');
+                bsModal.hide();
+                await fetchPendingRequests(role); // refresh registrar list (this item will vanish)
+                return;
+            }
+        }
+
+        // Reject action -> final for either approver
+        if (action === 'rejected') {
             await updateDoc(reqRef, {
-                status: action,
+                status: 'rejected',
                 currentStage: 'finalized',
                 approverUid: currentUser.uid,
                 approverComment: comment || null,
                 updatedAt: serverTimestamp(),
                 history: arrayUnion({
-                    ts: serverTimestamp(),
+                    ts: new Date().toISOString(),
                     actorUid: currentUser.uid,
-                    action: action,
+                    action: `rejected_by_${role || 'approver'}`,
                     comment: comment || null
                 })
             });
 
-            showMsg(`Request ${action}`);
+            showMsg('Request rejected');
             bsModal.hide();
-            await fetchPendingRequests();
+            await fetchPendingRequests(role);
             return;
         }
 
         showMsg('Unknown action', true);
     } catch (e) {
         console.error('Failed to perform action', e);
-        showMsg('Failed to update request', true);
+        showMsg('Failed to update request: ' + (e?.message || ''), true);
     }
 }
 
+
 /* ---------- Init function ---------- */
 export function initApprovalsPage() {
-    // ensure global exists so inline onclick can call it
     window.__approvals_openModal = window.__approvals_openModal;
 
     onAuthStateChanged(auth, async (user) => {
         currentUser = user;
         if (!user) {
-            // Not signed in: redirect to home
             window.location.href = '/index.html';
             return;
         }
 
-        // Quick role check: show an info message if user is not an approver
+        // Read the user's role
+        let role = null;
         try {
             const udoc = await getDoc(doc(db, 'users', user.uid));
-            const role = udoc.exists() ? udoc.data().role : null;
+            role = udoc.exists() ? udoc.data().role : null;
             if (!['hod', 'registrar'].includes(role)) {
                 showMsg('You are not an approver. Approver roles: hod, registrar.', true);
-                // still attempt to fetch pending requests (rules may block actual reads)
+                // still attempt to fetch nothing (fetchPendingRequests will handle non-approver case)
             } else {
                 showMsg('Welcome approver — listing pending requests');
             }
@@ -259,7 +310,8 @@ export function initApprovalsPage() {
             console.warn('Failed to read user role', e);
         }
 
-        // Load pending requests
-        await fetchPendingRequests();
+        // Load requests appropriate to role
+        await fetchPendingRequests(role);
     });
 }
+

@@ -25,6 +25,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "http
 
 const storage = getStorage();
 
+
 /* ---------- UI helpers ---------- */
 function showMsg(text, isError = false) {
     const el = document.getElementById('apply-msg');
@@ -52,6 +53,11 @@ async function submitLeave(event, user) {
         const route = routeEl ? routeEl.value : 'via_hod';
         const attachmentInput = document.getElementById('attachment');
         const attachments = [];
+
+        const attachmentUrl = document.getElementById('attachmentUrl').value;
+        if (attachmentUrl) {
+            attachments.push({ name: 'External File', url: attachmentUrl });
+        }
 
         // Basic validations
         if (!startDate || !endDate || !reason) {

@@ -115,7 +115,7 @@ window.__list_openDetails = async function (evt) {
             ? `<div class="mb-2"><strong>Attachments:</strong> ${d.attachments.map(a => `<a href="${a.url}" target="_blank" rel="noopener">${a.name}</a>`).join(', ')}</div>`
             : '';
         const historyHtml = (d.history && d.history.length)
-            ? `<div class="mt-2"><strong>History:</strong><ul>${d.history.map(h => `<li><small>${formatDate(h.ts)} — ${h.actorUid || 'system'} — ${h.action} ${h.comment ? ' — ' + h.comment : ''}</small></li>`).join('')}</ul></div>`
+            ? `<div class="mt-2"><strong>History:</strong><ul>${d.history.map(h => `<li><small>${formatDate(h.ts || h.createdAt)} — ${h.actorUid || 'system'} — ${h.action} ${h.comment ? ' — ' + h.comment : ''}</small></li>`).join('')}</ul></div>`
             : '';
 
         md.innerHTML = `
@@ -150,27 +150,21 @@ window.__list_openDetails = async function (evt) {
         bsModal.show();
 
         // attach handlers (safe attach)
-        const saveCommentBtn = document.getElementById('btnSaveComment');
-        // We don't have a dedicated Save button in the modal footer — so we'll wire the Cancel and a small "Save" action on close
-        // Attach cancel handler
         if (cancelBtn) {
             cancelBtn.onclick = async () => {
                 const confirmCancel = confirm('Are you sure you want to cancel this request? This will notify approvers.');
                 if (!confirmCancel) return;
                 await attemptCancelRequest();
-                // hide modal if cancel succeeded
                 try { bsModal.hide(); } catch (e) { }
             };
         }
 
         // when modal closes, save any user comment the requester added (non-status field)
         modalEl.addEventListener('hidden.bs.modal', async function onHidden() {
-            // remove this listener immediately to avoid multiple triggers
             modalEl.removeEventListener('hidden.bs.modal', onHidden);
             const commentText = (document.getElementById('userComment')?.value || '').trim();
             if (commentText !== (activeRequest.data.userComment || '')) {
                 await saveUserComment(commentText);
-                // reload list to reflect any changes
                 await loadRequests(currentUser.uid);
             }
         });
@@ -186,21 +180,23 @@ async function saveUserComment(text) {
     if (!activeRequest || !currentUser) return;
     try {
         const reqRef = doc(db, 'requests', activeRequest.id);
+        // Use a client-side timestamp inside the comment object because serverTimestamp() cannot be embedded in arrayUnion's object
+        const commentObj = {
+            text: text || null,
+            actorUid: currentUser.uid,
+            actorEmail: currentUser.email || null,
+            createdAt: new Date().toISOString()
+        };
         await updateDoc(reqRef, {
             userComment: text || null,
             updatedAt: serverTimestamp(),
-            history: arrayUnion({
-                ts: serverTimestamp(),
-                actorUid: currentUser.uid,
-                action: 'user_comment',
-                comment: text || null
-            })
+            history: arrayUnion(commentObj)
         });
         msg('Comment saved');
         return true;
     } catch (e) {
         console.error('Failed to save comment', e);
-        msg('Failed to save comment', true);
+        msg('Failed to save comment: ' + (e?.message || ''), true);
         return false;
     }
 }
@@ -212,7 +208,6 @@ async function attemptCancelRequest() {
         return;
     }
 
-    // Only allow the owner to attempt cancellation
     if (activeRequest.data.uid !== currentUser.uid) {
         msg('You are not the owner of this request', true);
         return;
@@ -220,22 +215,19 @@ async function attemptCancelRequest() {
 
     try {
         const reqRef = doc(db, 'requests', activeRequest.id);
-        // Attempt to set status to 'cancelled' and append history
         await updateDoc(reqRef, {
             status: 'cancelled',
             updatedAt: serverTimestamp(),
             history: arrayUnion({
-                ts: serverTimestamp(),
+                ts: new Date().toISOString(),
                 actorUid: currentUser.uid,
                 action: 'cancelled_by_user',
                 comment: null
             })
         });
         msg('Request cancelled');
-        // refresh list
         await loadRequests(currentUser.uid);
     } catch (e) {
-        // Likely to happen if Firestore rules forbid changing status by owner.
         console.error('Cancel request failed', e);
         msg('Unable to cancel request: ' + (e?.message || 'permission denied or rules blocked the update'), true);
     }
@@ -250,7 +242,6 @@ export function initListPage() {
             return;
         }
 
-        // load user's requests
         await loadRequests(user.uid);
     });
 }
