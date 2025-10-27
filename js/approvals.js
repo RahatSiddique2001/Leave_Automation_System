@@ -1,11 +1,4 @@
-// js/approvals.js
-// Complete, ready-to-drop file for the Approvals page.
-// Responsibilities:
-// - Guard page (redirect to index if not authenticated)
-// - List pending requests (pending_hod and pending_registrar as appropriate)
-// - Show request details in a modal and allow approver to Forward / Approve / Reject
-// - Append a history entry using arrayUnion
-// - Uses Firestore (requests, users) and Auth
+// js/approvals.js - MODIFIED VERSION with Department Filtering
 
 import { auth, db } from './firebase-init.js';
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
@@ -24,7 +17,8 @@ import {
 
 /* ---------- Module state ---------- */
 let currentUser = null;
-let currentRequestDoc = null; // { id, data }
+let currentRequestDoc = null;
+let currentUserDepartment = null; // NEW: Store user's department
 
 /* ---------- UI helpers ---------- */
 function showMsg(text, isError = false) {
@@ -45,35 +39,47 @@ function formatDateField(d) {
 }
 
 /* ---------- Load pending requests ---------- */
-// Load only relevant pending requests for the current approver role
-async function fetchPendingRequests(role) {
+// NEW: Modified to filter by department for HODs
+async function fetchPendingRequests(role, department) {
     const listEl = document.getElementById('requests-list');
     if (!listEl) return;
     listEl.innerHTML = 'Loading...';
 
     try {
         let whereClause;
+
         if (role === 'hod') {
-            whereClause = where('currentStage', '==', 'pending_hod');
+            // NEW: HOD only sees requests from their department
+            if (!department) {
+                listEl.innerHTML = '<div class="text-warning">You are not assigned to any department. Please update your profile.</div>';
+                return;
+            }
+            whereClause = [
+                where('currentStage', '==', 'pending_hod'),
+                where('department', '==', department) // NEW: Department filter
+            ];
         } else if (role === 'registrar') {
-            whereClause = where('currentStage', '==', 'pending_registrar');
+            whereClause = [where('currentStage', '==', 'pending_registrar')];
         } else {
-            // non-approver: nothing to show
             listEl.innerHTML = '<div class="text-muted">You are not an approver.</div>';
             return;
         }
 
-        // build query: status must be pending AND currentStage matches role
+        // Build query: status must be pending AND currentStage matches role AND department matches (for HOD)
         const q = query(
             collection(db, 'requests'),
             where('status', '==', 'pending'),
-            whereClause,
+            ...whereClause,
             orderBy('createdAt', 'desc')
         );
 
         const snaps = await getDocs(q);
         if (snaps.empty) {
-            listEl.innerHTML = '<div class="text-muted">No pending requests for your role.</div>';
+            if (role === 'hod') {
+                listEl.innerHTML = `<div class="text-muted">No pending requests for your department (${department}).</div>`;
+            } else {
+                listEl.innerHTML = '<div class="text-muted">No pending requests for your role.</div>';
+            }
             return;
         }
 
@@ -81,12 +87,17 @@ async function fetchPendingRequests(role) {
         snaps.forEach(s => {
             const d = s.data();
             const created = formatDateField(d.createdAt);
+
+            // NEW: Show department in the request card
+            const departmentHtml = d.department ? `<div><small>Department: ${d.department}</small></div>` : '';
+
             html += `
         <div class="list-group-item">
           <div class="d-flex justify-content-between">
             <div>
               <strong>${d.fullName || d.email}</strong>
               <div><small>${d.type} — ${d.startDate} → ${d.endDate}</small></div>
+              ${departmentHtml}
             </div>
             <div>
               <button class="btn btn-sm btn-outline-primary me-2" data-docid="${s.id}" onclick="window.__approvals_openModal(event)">Review</button>
@@ -106,7 +117,6 @@ async function fetchPendingRequests(role) {
     }
 }
 
-
 /* ---------- Modal open (exposed globally for inline onclick) ---------- */
 window.__approvals_openModal = async function (evt) {
     const btn = evt.currentTarget || evt.target;
@@ -125,12 +135,17 @@ window.__approvals_openModal = async function (evt) {
         // populate modal details
         const md = document.getElementById('modal-request-details');
         const d = currentRequestDoc.data;
+
+        // NEW: Show department in modal
+        const departmentHtml = d.department ? `<div><small>Department: ${d.department}</small></div>` : '';
+
         const attachmentsHtml = (d.attachments && d.attachments.length)
             ? `<div class="mt-2"><small>Attachments: ${d.attachments.map(a => `<a href="${a.url}" target="_blank" rel="noopener">${a.name}</a>`).join(', ')}</small></div>`
             : '';
         md.innerHTML = `
       <div><strong>${d.fullName || d.email}</strong> (<small>${d.email}</small>)</div>
       <div><small>Teacher ID: ${d.teacherId || '—'}</small></div>
+      ${departmentHtml}
       <div class="mt-2"><strong>${d.type}</strong> — ${d.startDate} → ${d.endDate}</div>
       <div class="mt-2"><em>${d.reason}</em></div>
       ${attachmentsHtml}
@@ -148,9 +163,17 @@ window.__approvals_openModal = async function (evt) {
         // attach handlers
         document.getElementById('btnApprove').onclick = () => handleAction('approved', bsModal);
         document.getElementById('btnReject').onclick = () => handleAction('rejected', bsModal);
-        // Forward button may not exist if page HTML wasn't updated; try safely
+
+        // NEW: Show Forward button only for HOD
         const fbtn = document.getElementById('btnForward');
-        if (fbtn) fbtn.onclick = () => handleAction('forward', bsModal);
+        if (fbtn) {
+            if (currentUser && currentUser.role === 'hod') {
+                fbtn.style.display = 'inline-block';
+                fbtn.onclick = () => handleAction('forward', bsModal);
+            } else {
+                fbtn.style.display = 'none';
+            }
+        }
     } catch (e) {
         console.error(e);
         showMsg('Failed to load request details', true);
@@ -173,10 +196,23 @@ async function handleAction(action, bsModal) {
 
     try {
         const udoc = await getDoc(doc(db, 'users', currentUser.uid));
-        const role = udoc.exists() ? udoc.data().role : null;
+        const userProfile = udoc.exists() ? udoc.data() : {};
+        const role = userProfile.role;
+
         if (!['hod', 'registrar'].includes(role)) {
             showMsg('You are not authorized to perform this action', true);
             return;
+        }
+
+        // NEW: Department validation for HOD
+        if (role === 'hod') {
+            const requestDepartment = currentRequestDoc.data.department;
+            const hodDepartment = userProfile.department;
+
+            if (requestDepartment !== hodDepartment) {
+                showMsg('You can only approve requests from your own department.', true);
+                return;
+            }
         }
 
         // HOD forwarding: explicit forward (keeps status pending, moves to registrar)
@@ -206,14 +242,13 @@ async function handleAction(action, bsModal) {
 
             showMsg('Forwarded to Registrar');
             bsModal.hide();
-            await fetchPendingRequests(role);
+            await fetchPendingRequests(role, currentUserDepartment);
             return;
         }
 
         // Approve action:
         if (action === 'approved') {
             if (role === 'hod') {
-                // HOD approval moves the request to registrar for final decision
                 await updateDoc(reqRef, {
                     currentStage: 'pending_registrar',
                     approverUid: currentUser.uid,
@@ -229,10 +264,9 @@ async function handleAction(action, bsModal) {
 
                 showMsg('Approved by HOD and forwarded to Registrar');
                 bsModal.hide();
-                await fetchPendingRequests(role); // refresh HOD list (this item will vanish for HOD)
+                await fetchPendingRequests(role, currentUserDepartment);
                 return;
             } else if (role === 'registrar') {
-                // Registrar final approval -> finalize
                 await updateDoc(reqRef, {
                     status: 'approved',
                     currentStage: 'finalized',
@@ -249,7 +283,7 @@ async function handleAction(action, bsModal) {
 
                 showMsg('Request approved (final)');
                 bsModal.hide();
-                await fetchPendingRequests(role); // refresh registrar list (this item will vanish)
+                await fetchPendingRequests(role, currentUserDepartment);
                 return;
             }
         }
@@ -272,7 +306,7 @@ async function handleAction(action, bsModal) {
 
             showMsg('Request rejected');
             bsModal.hide();
-            await fetchPendingRequests(role);
+            await fetchPendingRequests(role, currentUserDepartment);
             return;
         }
 
@@ -282,7 +316,6 @@ async function handleAction(action, bsModal) {
         showMsg('Failed to update request: ' + (e?.message || ''), true);
     }
 }
-
 
 /* ---------- Init function ---------- */
 export function initApprovalsPage() {
@@ -295,23 +328,37 @@ export function initApprovalsPage() {
             return;
         }
 
-        // Read the user's role
+        // Read the user's role and department
         let role = null;
+        let department = null;
         try {
             const udoc = await getDoc(doc(db, 'users', user.uid));
-            role = udoc.exists() ? udoc.data().role : null;
+            const userProfile = udoc.exists() ? udoc.data() : {};
+            role = userProfile.role;
+            department = userProfile.department;
+            currentUserDepartment = department; // Store for later use
+
+            // NEW: Set currentUser with role for department checking
+            currentUser = { ...user, role, department };
+
             if (!['hod', 'registrar'].includes(role)) {
                 showMsg('You are not an approver. Approver roles: hod, registrar.', true);
-                // still attempt to fetch nothing (fetchPendingRequests will handle non-approver case)
             } else {
-                showMsg('Welcome approver — listing pending requests');
+                if (role === 'hod') {
+                    if (department) {
+                        showMsg(`Welcome HOD — Showing pending requests for ${department} department`);
+                    } else {
+                        showMsg('Warning: You are not assigned to any department. Please update your profile.', true);
+                    }
+                } else {
+                    showMsg('Welcome Registrar — Listing all pending requests');
+                }
             }
         } catch (e) {
             console.warn('Failed to read user role', e);
         }
 
-        // Load requests appropriate to role
-        await fetchPendingRequests(role);
+        // Load requests appropriate to role and department
+        await fetchPendingRequests(role, department);
     });
 }
-

@@ -112,10 +112,17 @@ window.__list_openDetails = async function (evt) {
         const md = document.getElementById('modal-request-full');
         const d = activeRequest.data;
         const attachmentsHtml = (d.attachments && d.attachments.length)
-            ? `<div class="mb-2"><strong>Attachments:</strong> ${d.attachments.map(a => `<a href="${a.url}" target="_blank" rel="noopener">${a.name}</a>`).join(', ')}</div>`
-            : '';
-        const historyHtml = (d.history && d.history.length)
-            ? `<div class="mt-2"><strong>History:</strong><ul>${d.history.map(h => `<li><small>${formatDate(h.ts || h.createdAt)} — ${h.actorUid || 'system'} — ${h.action} ${h.comment ? ' — ' + h.comment : ''}</small></li>`).join('')}</ul></div>`
+            ? `<div class="mb-2"><strong>Attachments:</strong> ${d.attachments.map(a => {
+                // Check if it's a data URL (base64)
+                const isDataUrl = a.url && a.url.startsWith('data:');
+                const linkId = `attachment-${Math.random().toString(36).substr(2, 9)}`;
+
+                if (isDataUrl) {
+                    return `<a href="${a.url}" target="_blank" rel="noopener" id="${linkId}" class="attachment-link" data-url="${a.url}">${a.name}</a>`;
+                } else {
+                    return `<a href="${a.url}" target="_blank" rel="noopener">${a.name}</a>`;
+                }
+            }).join(', ')}</div>`
             : '';
 
         md.innerHTML = `
@@ -148,6 +155,10 @@ window.__list_openDetails = async function (evt) {
         const modalEl = document.getElementById('requestModal');
         const bsModal = new bootstrap.Modal(modalEl);
         bsModal.show();
+
+        // After the bsModal.show() line, add:
+        bsModal.show();
+        initAttachmentHandlers(); // NEW: Initialize attachment handlers
 
         // attach handlers (safe attach)
         if (cancelBtn) {
@@ -231,6 +242,76 @@ async function attemptCancelRequest() {
         console.error('Cancel request failed', e);
         msg('Unable to cancel request: ' + (e?.message || 'permission denied or rules blocked the update'), true);
     }
+}
+
+/* ---------- Fix attachment loading ---------- */
+function initAttachmentHandlers() {
+    // Add click handlers for attachment links
+    document.addEventListener('click', function (e) {
+        if (e.target.classList.contains('attachment-link')) {
+            e.preventDefault();
+            const link = e.target;
+            const dataUrl = link.getAttribute('data-url');
+            const fileName = link.textContent;
+
+            // Open in new tab
+            const newTab = window.open('', '_blank');
+
+            // Show loading message
+            newTab.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Loading ${fileName}</title>
+                    <style>
+                        body { 
+                            font-family: Arial, sans-serif; 
+                            display: flex; 
+                            justify-content: center; 
+                            align-items: center; 
+                            height: 100vh; 
+                            margin: 0; 
+                            background: #f5f5f5;
+                        }
+                        .loading-container {
+                            text-align: center;
+                            padding: 20px;
+                            background: white;
+                            border-radius: 8px;
+                            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                        }
+                        .spinner {
+                            border: 4px solid #f3f3f3;
+                            border-top: 4px solid #007bff;
+                            border-radius: 50%;
+                            width: 40px;
+                            height: 40px;
+                            animation: spin 1s linear infinite;
+                            margin: 0 auto 15px;
+                        }
+                        @keyframes spin {
+                            0% { transform: rotate(0deg); }
+                            100% { transform: rotate(360deg); }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="loading-container">
+                        <div class="spinner"></div>
+                        <h3>Loading Attachment</h3>
+                        <p>Opening ${fileName}...</p>
+                        <p><small>If the file doesn't load automatically, please wait a moment.</small></p>
+                    </div>
+                </body>
+                </html>
+            `);
+
+            // Auto-redirect to data URL after a short delay
+            setTimeout(() => {
+                newTab.location.href = dataUrl;
+            }, 500);
+        }
+    });
 }
 
 /* ---------- Init page ---------- */

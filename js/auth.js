@@ -1,6 +1,4 @@
-// js/auth.js
-// Complete auth UI module: signup, signin, signout, onAuthStateChanged UI updates.
-// Exports: initAuthHandlers()
+// js/auth.js - MODIFIED with FIXED DEPARTMENT LIST
 
 import { auth, db } from './firebase-init.js';
 import {
@@ -38,6 +36,98 @@ function clearAuthMsg() {
   if (elMsg) elMsg.textContent = '';
 }
 
+// NEW: Fixed department list for your university
+const FIXED_DEPARTMENTS = [
+  "Department of Accounting and Information Systems",
+  "Department of Agronomy and Agricultural Extension",
+  "Department of Anthropology",
+  "Department of Applied Chemistry & Chemical Engineering",
+  "Department of Applied Mathematics",
+  "Department of Arabic",
+  "Department of Banking and Insurance",
+  "Department of Bangla",
+  "Department of Biochemistry & Molecular Biology",
+  "Department of Botany",
+  "Department of Ceramics and Sculpture",
+  "Department of Chemistry",
+  "Department of Civil Engineering",
+  "Department of Clinical Psychology",
+  "Department of Computer Science & Engineering",
+  "Department of Crop Science and Technology",
+  "Department of Economics",
+  "Department of Electrical and Electronic Engineering",
+  "Department of English",
+  "Department of Finance",
+  "Department of Fisheries",
+  "Department of Folklore & Social Development studies",
+  "Department of Genetic Engineering & Biotechnology",
+  "Department of Geography & Environmental Studies",
+  "Department of Geology & Mining",
+  "Department of Graphic Design, Crafts & History of Art",
+  "Department of History",
+  "Department of Information & Communication Engineering",
+  "Department of Information Science & Library Management",
+  "Department of International Relations",
+  "Department of Islamic History & Culture",
+  "Department of Islamic Studies",
+  "Department of Law",
+  "Department of Law and Land Administration",
+  "Department of Management Studies",
+  "Department of Marketing",
+  "Department of Mass Communication and Journalism",
+  "Department of Materials Science and Engineering",
+  "Department of Mathematics",
+  "Department of Microbiology",
+  "Department of Music",
+  "Department of Persian language and literature",
+  "Department of Pharmacy",
+  "Department of Philosophy",
+  "Department of Physical Education and Sports Sciences",
+  "Department of Physics",
+  "Department of Political Science",
+  "Department of Population Science & Human Resource Development",
+  "Department of Psychology",
+  "Department of Public Administration",
+  "Department of Sociology",
+  "Department of Social Work",
+  "Department of Sanskrit",
+  "Department of Statistics",
+  "Department of Theatre",
+  "Department of Tourism and Hospitality Management",
+  "Department of Urdu",
+  "Department of Veterinary & Animal Sciences",
+  "Department of Zoology"
+];
+
+// NEW: Simplified function to populate departments dropdown
+function populateDepartments() {
+  const roleSelect = el('role');
+  const departmentGroup = el('department-group');
+  const departmentSelect = el('department');
+
+  if (!roleSelect || !departmentGroup || !departmentSelect) return;
+
+  // Show department field only for HOD and Teacher roles
+  const selectedRole = roleSelect.value;
+  if (selectedRole === 'hod' || selectedRole === 'teacher') {
+    departmentGroup.style.display = 'block';
+
+    // Clear existing options except the first
+    departmentSelect.innerHTML = '<option value="">Select Department</option>';
+
+    // Add fixed departments to dropdown
+    FIXED_DEPARTMENTS.forEach(dept => {
+      const option = document.createElement('option');
+      option.value = dept;
+      option.textContent = dept;
+      departmentSelect.appendChild(option);
+    });
+
+  } else {
+    departmentGroup.style.display = 'none';
+  }
+}
+
 function updateUserArea(user, profile) {
   const area = el('user-area');
   if (!area) return;
@@ -48,11 +138,14 @@ function updateUserArea(user, profile) {
   const displayName = profile?.fullName || user.displayName || user.email;
   const teacherIdHtml = profile?.teacherId ? `<div><small>Teacher ID: ${profile.teacherId}</small></div>` : '';
   const roleHtml = profile?.role ? `<div><small>Role: ${profile.role}</small></div>` : '';
+  const departmentHtml = profile?.department ? `<div><small>Department: ${profile.department}</small></div>` : '';
+
   area.innerHTML = `
     <div class="card p-2">
       <strong>${displayName}</strong>
       ${teacherIdHtml}
       ${roleHtml}
+      ${departmentHtml}
     </div>
   `;
 }
@@ -65,8 +158,15 @@ async function doSignUp() {
   const role = el('role')?.value || 'teacher';
   const email = el('email')?.value.trim() || '';
   const password = el('password')?.value || '';
+  const department = el('department')?.value || '';
 
-  console.log('Sign up attempt', { email, role, teacherId, fullName });
+  console.log('Sign up attempt', { email, role, teacherId, fullName, department });
+
+  // NEW: Department validation
+  if ((role === 'hod' || role === 'teacher') && !department) {
+    showAuthMsg('Please select a department', true);
+    return;
+  }
 
   if (!email || !password) {
     showAuthMsg('Email and password required', true);
@@ -91,17 +191,26 @@ async function doSignUp() {
       }
     }
 
-    // Save a user profile doc in Firestore (users/{uid})
-    const userDocRef = doc(db, 'users', cred.user.uid);
-    await setDoc(userDocRef, {
+    // NEW: Prepare user data with department
+    const userData = {
       uid: cred.user.uid,
       email: email,
       fullName: fullName || null,
       teacherId: teacherId || null,
       role: role || 'teacher',
       createdAt: serverTimestamp()
-    });
-    console.log('User profile saved to Firestore');
+    };
+
+    // Add department only for HOD and Teacher roles
+    if (role === 'hod' || role === 'teacher') {
+      userData.department = department;
+    }
+
+    // Save a user profile doc in Firestore (users/{uid})
+    const userDocRef = doc(db, 'users', cred.user.uid);
+    await setDoc(userDocRef, userData);
+
+    console.log('User profile saved to Firestore with department:', department);
 
     showAuthMsg('Account created and profile saved!');
     // close modal if present
@@ -112,7 +221,6 @@ async function doSignUp() {
     }
   } catch (err) {
     console.error('Sign up error', err);
-    // Firebase error codes come with messages; show friendly fallback
     showAuthMsg(err?.message || 'Sign up failed', true);
   }
 }
@@ -164,10 +272,19 @@ export function initAuthHandlers() {
   const btnSignup = el('btn-signup');
   const btnLogin = el('btn-login');
   const btnLogout = el('btn-logout');
+  const roleSelect = el('role');
 
   if (btnSignup) btnSignup.addEventListener('click', doSignUp);
   if (btnLogin) btnLogin.addEventListener('click', doSignIn);
   if (btnLogout) btnLogout.addEventListener('click', doSignOut);
+
+  // NEW: Role change listener for department field
+  if (roleSelect) {
+    roleSelect.addEventListener('change', populateDepartments);
+  }
+
+  // Initial population of departments
+  populateDepartments();
 
   // Observe auth state & update UI
   onAuthStateChanged(auth, async (user) => {

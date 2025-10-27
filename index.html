@@ -49,12 +49,21 @@
         <div class="modal-body">
           <div id="auth-msg" aria-live="polite" class="mb-2"></div>
           <input class="form-control mb-2" id="fullName" placeholder="Full name (for signup)" />
-          <input class="form-control mb-2" id="teacherId" placeholder="Teacher ID (optional)" />
+
           <select id="role" class="form-control mb-2">
             <option value="teacher">Teacher</option>
             <option value="hod">Head of Dept (HOD)</option>
             <option value="registrar">Registrar</option>
           </select>
+
+          <!-- ADD THIS DEPARTMENT FIELD -->
+          <div id="department-group" style="display: none;">
+            <label class="form-label">Department</label>
+            <select id="department" class="form-control mb-2">
+              <option value="">Select Department</option>
+              <!-- Departments will be populated automatically by JavaScript -->
+            </select>
+          </div>
           <input class="form-control mb-2" id="email" placeholder="Email" />
           <input class="form-control mb-2" id="password" type="password" placeholder="Password" />
           <div class="d-flex justify-content-between">
