@@ -24,38 +24,54 @@
         <div id="apply-msg" class="mb-3" aria-live="polite"></div>
 
         <form id="leaveForm" class="mb-4">
-            <div class="mb-3">
-                <label class="form-label">Leave type</label>
-                <select id="leaveType" class="form-control" required>
-                    <option value="Casual">Casual</option>
-                    <option value="Medical">Medical</option>
-                    <option value="Study">Study</option>
-                    <option value="Earned">Earned</option>
-                    <option value="Station">Station</option>
-                    <option value="Maternity">Maternity</option>
-                    <option value="Other">Other</option>
-                </select>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Leave type</label>
+                    <select id="leaveType" name="leaveType" class="form-control" required>
+                        <!-- Added name="leaveType" -->
+                        <option value="casual">Casual</option>
+                        <option value="medical">Medical</option>
+                        <option value="study">Study</option>
+                        <option value="earned">Earned</option>
+                        <option value="station">Station</option>
+                        <option value="maternity">Maternity</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Available Balance</label>
+                    <div id="leave-balance-display" class="form-control"
+                        style="background-color: #f8f9fa; height: 38px; display: flex; align-items: center; padding: 0.375rem 0.75rem;">
+                        <div class="text-center w-100">
+                            <div class="spinner-border spinner-border-sm" role="status"></div>
+                            <span class="ms-2">Loading balance...</span>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="row">
                 <div class="col-md-6 mb-3">
                     <label class="form-label">Start date</label>
-                    <input id="startDate" type="date" class="form-control" required />
+                    <input id="startDate" name="startDate" type="date" class="form-control" required />
+                    <!-- Added name="startDate" -->
                 </div>
                 <div class="col-md-6 mb-3">
                     <label class="form-label">End date</label>
-                    <input id="endDate" type="date" class="form-control" required />
+                    <input id="endDate" name="endDate" type="date" class="form-control" required />
+                    <!-- Added name="endDate" -->
                 </div>
             </div>
 
             <div class="mb-3">
                 <label class="form-label">Reason</label>
-                <textarea id="reason" class="form-control" rows="4" required></textarea>
+                <textarea id="reason" name="reason" class="form-control" rows="4" required></textarea>
+                <!-- Added name="reason" -->
             </div>
 
             <div class="mb-3">
                 <label class="form-label">Route</label>
-                <select id="route" class="form-control">
+                <select id="route" name="route" class="form-control"> <!-- Added name="route" -->
                     <option value="via_hod">Via HOD</option>
                     <option value="direct_registrar">Direct to Registrar</option>
                 </select>
@@ -63,17 +79,18 @@
 
             <div class="mb-3">
                 <label for="attachment" class="form-label">Attachments (optional)</label>
-                <input type="file" id="attachment" class="form-control" multiple>
+                <input type="file" id="attachment" name="attachment" class="form-control" multiple>
+                <!-- Added name="attachment" -->
             </div>
             <div class="mb-3">
                 <label for="attachmentUrl" class="form-label">Or paste external file link (optional)</label>
-                <input type="url" id="attachmentUrl" class="form-control" placeholder="https://example.com/file.pdf">
+                <input type="url" id="attachmentUrl" name="attachmentUrl" class="form-control"
+                    placeholder="https://example.com/file.pdf"> <!-- Added name="attachmentUrl" -->
             </div>
-
-
 
             <button id="btnSubmitLeave" class="btn btn-primary">Submit Request</button>
         </form>
+
 
         <div id="my-requests-list"></div>
     </div>

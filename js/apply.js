@@ -1,4 +1,4 @@
-// js/apply.js - MODIFIED VERSION with Department Support
+// js/apply.js - CLEANED VERSION (No Email, Notifications Only)
 
 import { auth, db } from './firebase-init.js';
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
@@ -15,7 +15,53 @@ import {
     getDoc
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
-/* ---------- UI helpers ---------- */
+import { getUserLeaveBalances, renderSingleLeaveBalance, getLeaveBalance } from './leave-service.js';
+import { calculateLeaveDays } from './leave-config.js';
+import { notificationService } from './notification-service.js';
+
+/* ---------- Leave Balance Validation ---------- */
+let userLeaveBalances = {};
+
+/* ---------- Find HOD Email by Department ---------- */
+async function findHodEmail(department) {
+    try {
+        console.log('Searching for HOD in department:', department);
+
+        // Query users collection to find HOD for this department
+        const q = query(
+            collection(db, 'users'),
+            where('role', '==', 'hod'),
+            where('department', '==', department)
+        );
+        const querySnapshot = await getDocs(q);
+
+        console.log(`Found ${querySnapshot.size} HOD(s) for department: ${department}`);
+
+        if (!querySnapshot.empty) {
+            const hodData = querySnapshot.docs[0].data();
+            console.log('Found HOD email:', hodData.email);
+            return hodData.email;
+        }
+
+        console.warn('No HOD found for department:', department);
+        return null;
+    } catch (error) {
+        console.error('Error finding HOD email:', error);
+        if (error.code === 'permission-denied') {
+            console.error('Permission denied. Check Firestore rules for users collection access.');
+        }
+        return null;
+    }
+}
+
+/* ---------- Helper Functions ---------- */
+function getCurrentAcademicYear() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    return month >= 1 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+}
+
 function showMsg(text, isError = false) {
     const el = document.getElementById('apply-msg');
     if (!el) {
@@ -26,144 +72,302 @@ function showMsg(text, isError = false) {
     el.style.color = isError ? 'red' : 'green';
 }
 
-/* ---------- Helper: read file as data URL (base64) ---------- */
-function readFileAsDataURL(file) {
-    return new Promise((resolve, reject) => {
-        const fr = new FileReader();
-        fr.onload = () => resolve(fr.result);
-        fr.onerror = (err) => reject(err);
-        fr.readAsDataURL(file);
-    });
+async function loadAndDisplayLeaveBalances(userId) {
+    try {
+        userLeaveBalances = await getUserLeaveBalances(userId);
+        const initialLeaveType = document.getElementById('leaveType')?.value || 'casual';
+        renderSingleLeaveBalance(userLeaveBalances, initialLeaveType, 'leave-balance-display');
+        setupRealTimeBalanceValidation();
+    } catch (error) {
+        console.error('Failed to load leave balances:', error);
+        document.getElementById('leave-balance-display').innerHTML =
+            '<div class="text-danger">Failed to load leave balances</div>';
+    }
+}
+
+function setupRealTimeBalanceValidation() {
+    const leaveTypeSelect = document.getElementById('leaveType');
+
+    function updateBalanceDisplay() {
+        const leaveType = leaveTypeSelect?.value;
+        if (leaveType && userLeaveBalances[leaveType] !== undefined) {
+            renderSingleLeaveBalance(userLeaveBalances, leaveType, 'leave-balance-display');
+        }
+    }
+
+    if (leaveTypeSelect) {
+        leaveTypeSelect.addEventListener('change', updateBalanceDisplay);
+    }
+    updateBalanceDisplay();
+}
+
+function validateDates(startDate, endDate) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (start < today) {
+        return { isValid: false, message: 'Start date cannot be in the past.' };
+    }
+    if (end < start) {
+        return { isValid: false, message: 'End date cannot be before start date.' };
+    }
+    return { isValid: true };
+}
+
+function validateReason(reason) {
+    if (reason.length < 10) {
+        return { isValid: false, message: 'Reason must be at least 10 characters long.' };
+    }
+    if (reason.length > 500) {
+        return { isValid: false, message: 'Reason cannot exceed 500 characters.' };
+    }
+    return { isValid: true };
+}
+
+function showValidationError(message, isError = true) {
+    const msgEl = document.getElementById('apply-msg');
+    if (msgEl) {
+        msgEl.textContent = message;
+        msgEl.style.color = isError ? 'red' : 'green';
+    }
+}
+
+function setupRealTimeValidation() {
+    const startDateInput = document.getElementById('startDate');
+    const endDateInput = document.getElementById('endDate');
+    const reasonInput = document.getElementById('reason');
+    const charCountEl = document.createElement('div');
+
+    if (reasonInput) {
+        charCountEl.className = 'form-text text-muted';
+        charCountEl.innerHTML = '<small>Character count: <span id="charCount">0</span>/500</small>';
+        reasonInput.parentNode.appendChild(charCountEl);
+
+        reasonInput.addEventListener('input', function () {
+            const count = this.value.length;
+            document.getElementById('charCount').textContent = count;
+
+            if (count > 500) {
+                charCountEl.innerHTML = '<small class="text-danger">Character count: <span id="charCount">' + count + '</span>/500 (Too long!)</small>';
+            } else if (count < 10) {
+                charCountEl.innerHTML = '<small class="text-warning">Character count: <span id="charCount">' + count + '</span>/500 (Minimum 10 required)</small>';
+            } else {
+                charCountEl.innerHTML = '<small class="text-success">Character count: <span id="charCount">' + count + '</span>/500</small>';
+            }
+        });
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    if (startDateInput) startDateInput.min = today;
+    if (endDateInput) endDateInput.min = today;
+
+    if (startDateInput && endDateInput) {
+        startDateInput.addEventListener('change', validateDateRange);
+        endDateInput.addEventListener('change', validateDateRange);
+    }
+}
+
+function validateDateRange() {
+    const startDate = document.getElementById('startDate')?.value;
+    const endDate = document.getElementById('endDate')?.value;
+
+    if (startDate && endDate) {
+        const validation = validateDates(startDate, endDate);
+        if (!validation.isValid) {
+            showValidationError(validation.message, true);
+        } else {
+            showValidationError('', false);
+        }
+    }
 }
 
 /* ---------- Submit handler ---------- */
 async function submitLeave(event, user) {
     event.preventDefault();
-    const btn = document.getElementById('btnSubmitLeave');
-    if (btn) btn.disabled = true;
-    showMsg('');
 
     try {
-        const type = (document.getElementById('leaveType')?.value || '').trim();
-        const startDate = (document.getElementById('startDate')?.value || '').trim();
-        const endDate = (document.getElementById('endDate')?.value || '').trim();
-        const reason = (document.getElementById('reason')?.value || '').trim();
-        const routeEl = document.getElementById('route');
-        const route = routeEl ? routeEl.value : 'via_hod';
+        console.log('Starting leave submission...');
 
-        // inputs (may or may not exist)
-        const attachmentInput = document.getElementById('attachment');
-        const attachmentUrlEl = document.getElementById('attachmentUrl');
+        const formData = new FormData(event.target);
+        const leaveType = formData.get('leaveType');
+        const startDate = formData.get('startDate');
+        const endDate = formData.get('endDate');
+        const reason = formData.get('reason');
+        const contactAddress = formData.get('contactAddress');
+        const emergencyContact = formData.get('emergencyContact');
 
-        // Basic validations
-        if (!startDate || !endDate || !reason) {
-            showMsg('Please fill all required fields.', true);
-            if (btn) btn.disabled = false;
-            return;
-        }
-        if (new Date(endDate) < new Date(startDate)) {
-            showMsg('End date cannot be before start date.', true);
-            if (btn) btn.disabled = false;
-            return;
-        }
-
-        // Fetch profile from users/{uid} if exists
-        const userDocRef = doc(db, 'users', user.uid);
-        const userSnap = await getDoc(userDocRef);
-        const profile = userSnap.exists() ? userSnap.data() : {};
-
-        // NEW: Get user's department
-        const userDepartment = profile.department || null;
-
-        // NEW: Validate that teacher has a department assigned
-        if (route === 'via_hod' && (!userDepartment || userDepartment === '')) {
-            showMsg('You need to be assigned to a department to submit via HOD. Please update your profile.', true);
-            if (btn) btn.disabled = false;
-            return;
-        }
-
-        // Create the request document first with empty attachments array
-        const requestsCol = collection(db, 'requests');
-
-        // NEW: Include department in request data
-        const requestData = {
-            uid: user.uid,
-            email: user.email,
-            fullName: profile.fullName || null,
-            teacherId: profile.teacherId || null,
-            role: profile.role || 'teacher',
-            type,
-            startDate,
+        // DEBUG: Log all form values
+        console.log('Form values:', {
+            leaveType,
+            startDate, 
             endDate,
             reason,
-            route,
-            currentStage: route === 'via_hod' ? 'pending_hod' : 'pending_registrar',
+            contactAddress,
+            emergencyContact
+        });
+
+        // Validate required fields
+        if (!leaveType || !startDate || !endDate || !reason) {
+            throw new Error('Please fill in all required fields');
+        }
+
+        if (!user) {
+            throw new Error('You must be logged in to submit a leave request');
+        }
+
+        // Get user profile
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        if (!userDoc.exists()) {
+            throw new Error('User profile not found. Please contact administrator.');
+        }
+
+        const userProfile = userDoc.data();
+        const department = userProfile.department;
+
+        if (!department) {
+            throw new Error('Department not found in your profile. Please contact administrator.');
+        }
+
+        console.log('User department:', department);
+
+        // Calculate leave days
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+
+        if (end < start) {
+            throw new Error('End date cannot be before start date');
+        }
+
+        const timeDiff = end.getTime() - start.getTime();
+        const numberOfDays = Math.ceil(timeDiff / (1000 * 3600 * 24)) + 1;
+
+        if (numberOfDays <= 0) {
+            throw new Error('Invalid date range');
+        }
+
+        console.log('Calculated leave days:', numberOfDays);
+
+        // Check leave balance
+        const leaveBalance = await getLeaveBalance(user.uid, leaveType);
+        console.log('Available balance:', leaveBalance, 'Requested days:', numberOfDays);
+
+        if (leaveBalance < numberOfDays) {
+            throw new Error(`Insufficient ${leaveType} leave balance. Available: ${leaveBalance} days, Requested: ${numberOfDays} days`);
+        }
+
+        // Find HOD email for the department
+        console.log('Finding HOD for department:', department);
+        const hodEmail = await findHodEmail(department);
+
+        if (!hodEmail) {
+            console.warn('No HOD found for department:', department);
+        }
+
+        console.log('Found HOD email:', hodEmail);
+
+        
+
+        // Create leave request document
+        const requestData = {
+            // User info
+            userId: user.uid,
+            email: user.email,
+            fullName: userProfile.fullName || user.email,
+            department: department,
+            employeeId: userProfile.employeeId || '',
+
+            // Leave details
+            leaveType: leaveType,
+            startDate: startDate,
+            endDate: endDate,
+            numberOfDays: numberOfDays,
+            reason: reason,
+            contactAddress: contactAddress || '',
+            emergencyContact: emergencyContact || '',
+
+            // Approval chain
+            hodEmail: hodEmail,
+            registrarEmail: 'registrar@ru.ac.bd',
+            currentStage: hodEmail ? 'pending_hod' : 'pending_registrar',
             status: 'pending',
-            approverUid: null,
-            approverComment: null,
-            attachments: [],
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp()
+
+            // Timestamps
+            appliedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+
+            // System fields
+            academicYear: getCurrentAcademicYear()
         };
 
-        // NEW: Add department to request data
-        if (userDepartment) {
-            requestData.department = userDepartment;
-        }
+        console.log('Creating leave request with data:', requestData);
+        const docRef = await addDoc(collection(db, 'leaveRequests'), requestData);
 
-        const newDocRef = await addDoc(requestsCol, requestData);
+        console.log('Created request doc id =', docRef.id, 'with department:', department);
 
-        console.log('Created request doc id =', newDocRef.id, 'with department:', userDepartment);
-
-        // Prepare attachments array
-        const attachments = [];
-
-        // External URL (if provided) -> store as {name, url}
-        const attachmentUrl = attachmentUrlEl ? (attachmentUrlEl.value || '').trim() : '';
-        if (attachmentUrl) {
-            const parsedName = (attachmentUrl.split('/').pop() || 'External file').split('?')[0];
-            attachments.push({ name: parsedName, url: attachmentUrl });
-        }
-
-        // Local file(s) handling
-        if (attachmentInput && attachmentInput.files && attachmentInput.files.length > 0) {
-            for (let i = 0; i < attachmentInput.files.length; i++) {
-                const file = attachmentInput.files[i];
-                try {
-                    const dataUrl = await readFileAsDataURL(file);
-                    attachments.push({
-                        name: file.name,
-                        url: dataUrl
-                    });
-                } catch (err) {
-                    console.warn('Failed to read file as data URL', err);
-                }
-            }
-        }
-
-        // If we collected attachments, update the document with the array
-        if (attachments.length > 0) {
+       // ✅ Create notification for HOD
+        if (hodEmail) {
             try {
-                await updateDoc(newDocRef, { attachments, updatedAt: serverTimestamp() });
-                console.log('Saved attachments metadata on request doc');
-            } catch (err) {
-                console.error('Failed to save attachments to request doc', err);
-                showMsg('Request submitted but attachments could not be saved (file too large?).', true);
+                // Find HOD's user ID
+                const hodQuery = query(
+                    collection(db, 'users'), 
+                    where('email', '==', hodEmail)
+                );
+                const hodSnapshot = await getDocs(hodQuery);
+                
+                if (!hodSnapshot.empty) {
+                    const hodUserId = hodSnapshot.docs[0].id;
+                    
+                    // Wait for notification to be created
+                    await notificationService.createNotification({
+                        userId: hodUserId,
+                        title: 'New Leave Request',
+                        message: `New ${leaveType} leave request from ${userProfile.fullName || user.email} in ${department}`,
+                        type: 'new_request',
+                        read: false,
+                        createdAt: serverTimestamp(),
+                        requestId: docRef.id
+                    });
+                    
+                    console.log('Notification created for HOD:', hodEmail);
+                }
+            } catch (notificationError) {
+                console.warn('Failed to create HOD notification:', notificationError);
+                // Don't fail the entire submission if notification fails
             }
         }
 
-        showMsg('Leave request submitted!');
-        // reset form
-        const form = document.getElementById('leaveForm');
-        if (form) form.reset();
+        // ✅ Create notification for the teacher (confirmation)
+        try {
+            await notificationService.createNotification({
+                userId: user.uid,
+                title: 'Leave Request Submitted',
+                message: `Your ${leaveType} leave request has been submitted successfully.`,
+                type: 'confirmation',
+                read: false,
+                createdAt: serverTimestamp(),
+                requestId: docRef.id
+            });
+        } catch (notificationError) {
+            console.warn('Failed to create teacher notification:', notificationError);
+        }
 
-        // refresh list
+        // Show success message to teacher
+        showMsg('Leave request submitted successfully! You will be notified when it is reviewed.', false);
+
+        // Reset form
+        event.target.reset();
+
+        // Reload leave balances and requests
+        await loadAndDisplayLeaveBalances(user.uid);
         await renderMyRequests(user.uid);
-    } catch (err) {
-        console.error('Submit leave failed', err);
-        showMsg(err?.message || 'Failed to submit leave', true);
-    } finally {
-        if (btn) btn.disabled = false;
+
+        console.log('Leave request submitted successfully');
+
+    } catch (error) {
+        console.error('Error submitting leave request:', error);
+        showMsg('Failed to submit leave request: ' + error.message, true);
     }
 }
 
@@ -171,62 +375,58 @@ async function submitLeave(event, user) {
 async function renderMyRequests(uid) {
     const listEl = document.getElementById('my-requests-list');
     if (!listEl) return;
-    listEl.innerHTML = '<h4>My Requests</h4><div>Loading...</div>';
+
+    listEl.innerHTML = `
+        <h4>My Requests</h4>
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2 text-muted">Loading your requests...</p>
+        </div>
+    `;
 
     try {
         const q = query(
-            collection(db, 'requests'),
-            where('uid', '==', uid),
-            orderBy('createdAt', 'desc')
+            collection(db, 'leaveRequests'),
+            where('userId', '==', uid),
+            orderBy('appliedAt', 'desc')
         );
         const snaps = await getDocs(q);
+
         if (snaps.empty) {
-            listEl.innerHTML = '<h4>My Requests</h4><div class="text-muted">No requests yet.</div>';
+            listEl.innerHTML = '<h4>My Requests</h4><div class="text-muted py-3">No requests yet.</div>';
             return;
         }
 
         let html = '<h4>My Requests</h4><div class="list-group">';
         snaps.forEach(docSnap => {
             const d = docSnap.data();
-            let created = '';
+            let applied = '';
             try {
-                created = d.createdAt?.toDate ? d.createdAt.toDate().toLocaleString() : (d.createdAt || '');
+                applied = d.appliedAt?.toDate ? d.appliedAt.toDate().toLocaleString() : (d.appliedAt || '');
             } catch (e) {
-                created = '';
+                applied = '';
             }
 
-            // NEW: Show department if available
             const departmentHtml = d.department ? `<div><small>Department: ${d.department}</small></div>` : '';
 
-            // Build attachments html
-            let attachmentsHtml = '';
-            if (d.attachments && Array.isArray(d.attachments) && d.attachments.length) {
-                attachmentsHtml = `<div class="mt-2"><small>Attachments: ${d.attachments.map(a => {
-                    const href = a.url || '#';
-                    const display = a.name || (typeof a === 'string' ? (a.split('/').pop() || 'Attachment') : 'Attachment');
-                    return `<a href="${href}" target="_blank" rel="noopener">${display}</a>`;
-                }).join(', ')}</small></div>`;
-            } else if (d.attachments && typeof d.attachments === 'string') {
-                attachmentsHtml = `<div class="mt-2"><small>Attachment: <a href="${d.attachments}" target="_blank" rel="noopener">${d.attachments.split('/').pop()}</a></small></div>`;
-            }
-
             html += `
-        <div class="list-group-item">
-          <div class="d-flex justify-content-between">
-            <div>
-              <strong>${d.type}</strong> — ${d.startDate} → ${d.endDate}
-              <div><small>${d.reason}</small></div>
-              ${departmentHtml}
-            </div>
-            <div class="text-end">
-              <div><span class="badge bg-${d.status === 'pending' ? 'warning text-dark' : d.status === 'approved' ? 'success' : 'danger'}">${d.status}</span></div>
-              <div><small class="text-muted">${d.currentStage || ''}</small></div>
-            </div>
-          </div>
-          ${attachmentsHtml}
-          <div class="text-muted mt-2"><small>Submitted: ${created}</small></div>
-        </div>
-      `;
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between">
+                    <div>
+                        <strong>${d.leaveType}</strong> — ${d.startDate} → ${d.endDate}
+                        <div><small>${d.reason}</small></div>
+                        ${departmentHtml}
+                    </div>
+                    <div class="text-end">
+                        <div><span class="badge bg-${d.status === 'pending' ? 'warning text-dark' : d.status === 'approved' ? 'success' : 'danger'}">${d.status}</span></div>
+                        <div><small class="text-muted">${d.currentStage || ''}</small></div>
+                    </div>
+                    </div>
+                    <div class="text-muted mt-2"><small>Submitted: ${applied}</small></div>
+                </div>
+            `;
         });
         html += '</div>';
         listEl.innerHTML = html;
@@ -236,7 +436,7 @@ async function renderMyRequests(uid) {
     }
 }
 
-/* ---------- Init function exported for page ---------- */
+/* ---------- Init function ---------- */
 export function initApplyPage() {
     onAuthStateChanged(auth, async (user) => {
         if (!user) {
@@ -244,13 +444,15 @@ export function initApplyPage() {
             return;
         }
 
-        // NEW: Check if teacher has department assigned
+        await loadAndDisplayLeaveBalances(user.uid);
+        setupRealTimeValidation();
+
+        // Check if teacher has department assigned
         try {
             const userDocRef = doc(db, 'users', user.uid);
             const userSnap = await getDoc(userDocRef);
             const profile = userSnap.exists() ? userSnap.data() : {};
 
-            // Show warning if teacher doesn't have department but tries to use HOD route
             const routeSelect = document.getElementById('route');
             if (routeSelect && profile.role === 'teacher' && (!profile.department || profile.department === '')) {
                 showMsg('Warning: You are not assigned to any department. You can only submit requests directly to Registrar.', true);
@@ -263,11 +465,18 @@ export function initApplyPage() {
             console.warn('Could not check user department:', error);
         }
 
-        // Attach submit handler once
-        const form = document.getElementById('leaveForm');
-        if (form) {
-            form.removeEventListener('submit', submitLeave);
-            form.addEventListener('submit', (e) => submitLeave(e, user));
+        // Attach submit handler
+        const leaveForm = document.getElementById('leaveForm');
+        if (leaveForm) {
+            console.log('Form found, attaching submit handler...');
+    
+            leaveForm.addEventListener('submit', (e) => {
+                console.log('Form submitted!', e);
+                console.log('Current user:', user);
+                submitLeave(e, user);
+            });
+        } else {
+            console.error('Form element not found!');
         }
 
         // Render user's requests

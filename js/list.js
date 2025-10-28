@@ -47,7 +47,14 @@ function formatDate(tsOrString) {
 async function loadRequests(uid) {
     const container = document.getElementById('requests-container');
     if (!container) return;
-    container.innerHTML = 'Loading...';
+    container.innerHTML = `
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2 text-muted">Loading your requests...</p>
+        </div>
+`;
 
     try {
         const q = query(
@@ -57,7 +64,7 @@ async function loadRequests(uid) {
         );
         const snaps = await getDocs(q);
         if (snaps.empty) {
-            container.innerHTML = '<div class="text-muted">You have not submitted any requests yet.</div>';
+            container.innerHTML = '<div class="text-muted py-4 text-center">You have not submitted any requests yet.</div>';
             return;
         }
 
@@ -111,30 +118,80 @@ window.__list_openDetails = async function (evt) {
         // populate modal
         const md = document.getElementById('modal-request-full');
         const d = activeRequest.data;
-        const attachmentsHtml = (d.attachments && d.attachments.length)
-            ? `<div class="mb-2"><strong>Attachments:</strong> ${d.attachments.map(a => {
-                // Check if it's a data URL (base64)
-                const isDataUrl = a.url && a.url.startsWith('data:');
-                const linkId = `attachment-${Math.random().toString(36).substr(2, 9)}`;
 
-                if (isDataUrl) {
-                    return `<a href="${a.url}" target="_blank" rel="noopener" id="${linkId}" class="attachment-link" data-url="${a.url}">${a.name}</a>`;
-                } else {
-                    return `<a href="${a.url}" target="_blank" rel="noopener">${a.name}</a>`;
-                }
-            }).join(', ')}</div>`
+        // FIXED: Add historyHtml variable that was missing
+        const historyHtml = (d.history && d.history.length)
+            ? `<div class="mt-2"><strong>History:</strong><ul>${d.history.map(h => `<li><small>${formatDate(h.ts || h.createdAt)} — ${h.actorUid || 'system'} — ${h.action} ${h.comment ? ' — ' + h.comment : ''}</small></li>`).join('')}</ul></div>`
             : '';
 
+        // FIXED: Clean attachment display with reload instructions
+        const attachmentsHtml = (d.attachments && d.attachments.length)
+            ? `<div class="mb-2">
+                <strong>Attachments:</strong> 
+                <div class="mt-1">
+                    ${d.attachments.map(a => {
+                const isDataUrl = a.url && a.url.startsWith('data:');
+
+                if (isDataUrl) {
+                    return `
+                                <div class="mb-1">
+                                    <a href="${a.url}" 
+                                       target="_blank" 
+                                       rel="noopener" 
+                                       class="text-primary">
+                                        📄 ${a.name}
+                                    </a>
+                                    <small class="text-muted ms-2">
+                                        (reload new tab to view attachment)
+                                    </small>
+                                </div>
+                            `;
+                } else {
+                    return `
+                                <div class="mb-1">
+                                    <a href="${a.url}" 
+                                       target="_blank" 
+                                       rel="noopener" 
+                                       class="text-primary">
+                                        🔗 ${a.name}
+                                    </a>
+                                </div>
+                            `;
+                }
+            }).join('')}
+                </div>
+               </div>`
+            : '';
+
+        // NEW: Show approver comment if request was rejected or has approver comments
+        const approverCommentHtml = (d.status === 'rejected' && d.approverComment)
+            ? `<div class="mt-2 alert alert-danger">
+          <strong>Rejection Reason:</strong> ${d.approverComment}
+          ${d.approverUid ? `<br><small>By: ${d.approverUid}</small>` : ''}
+       </div>`
+            : (d.approverComment && d.status === 'approved')
+                ? `<div class="mt-2 alert alert-success">
+          <strong>Approver Note:</strong> ${d.approverComment}
+          ${d.approverUid ? `<br><small>By: ${d.approverUid}</small>` : ''}
+       </div>`
+                : (d.approverComment)
+                    ? `<div class="mt-2 alert alert-info">
+          <strong>Approver Comment:</strong> ${d.approverComment}
+          ${d.approverUid ? `<br><small>By: ${d.approverUid}</small>` : ''}
+       </div>`
+                    : '';
+
         md.innerHTML = `
-      <div><strong>${d.fullName || d.email}</strong> (<small>${d.email}</small>)</div>
-      <div><small>Teacher ID: ${d.teacherId || '—'}</small></div>
-      <div class="mt-2"><strong>${d.type}</strong> — ${d.startDate} → ${d.endDate}</div>
-      <div class="mt-2"><em>${d.reason}</em></div>
-      ${attachmentsHtml}
-      <div class="mt-2"><small>Status: <strong>${d.status}</strong></small></div>
-      <div class="mt-2"><small>Current stage: <strong>${d.currentStage || '—'}</strong></small></div>
-      ${historyHtml}
-    `;
+  <div><strong>${d.fullName || d.email}</strong> (<small>${d.email}</small>)</div>
+  <div><small>Teacher ID: ${d.teacherId || '—'}</small></div>
+  <div class="mt-2"><strong>${d.type}</strong> — ${d.startDate} → ${d.endDate}</div>
+  <div class="mt-2"><em>${d.reason}</em></div>
+  ${attachmentsHtml}
+  <div class="mt-2"><small>Status: <strong>${d.status}</strong></small></div>
+  <div class="mt-2"><small>Current stage: <strong>${d.currentStage || '—'}</strong></small></div>
+  ${approverCommentHtml}
+  ${historyHtml}
+`;
 
         // user comment (prepopulate if exists)
         const userCommentEl = document.getElementById('userComment');
@@ -143,12 +200,20 @@ window.__list_openDetails = async function (evt) {
         // show/hide Cancel button: only when status == 'pending'
         const cancelBtn = document.getElementById('btnCancelRequest');
         if (cancelBtn) {
-            if (d.status === 'pending') {
-                cancelBtn.style.display = '';
-                cancelBtn.disabled = false;
-            } else {
-                cancelBtn.style.display = 'none';
-            }
+            cancelBtn.onclick = () => {
+                // Show confirmation modal instead of basic confirm()
+                const confirmModalEl = document.getElementById('cancelConfirmModal');
+                const confirmModal = new bootstrap.Modal(confirmModalEl);
+                confirmModal.show();
+                
+                // Set up the confirmation button
+                const confirmCancelBtn = document.getElementById('confirmCancelBtn');
+                confirmCancelBtn.onclick = async () => {
+                    await attemptCancelRequest();
+                    confirmModal.hide();
+                    try { bsModal.hide(); } catch (e) { }
+                };
+            };
         }
 
         // show modal
@@ -156,9 +221,7 @@ window.__list_openDetails = async function (evt) {
         const bsModal = new bootstrap.Modal(modalEl);
         bsModal.show();
 
-        // After the bsModal.show() line, add:
-        bsModal.show();
-        initAttachmentHandlers(); // NEW: Initialize attachment handlers
+        // REMOVED: initAttachmentHandlers(); // Not needed anymore
 
         // attach handlers (safe attach)
         if (cancelBtn) {
@@ -244,75 +307,8 @@ async function attemptCancelRequest() {
     }
 }
 
-/* ---------- Fix attachment loading ---------- */
-function initAttachmentHandlers() {
-    // Add click handlers for attachment links
-    document.addEventListener('click', function (e) {
-        if (e.target.classList.contains('attachment-link')) {
-            e.preventDefault();
-            const link = e.target;
-            const dataUrl = link.getAttribute('data-url');
-            const fileName = link.textContent;
-
-            // Open in new tab
-            const newTab = window.open('', '_blank');
-
-            // Show loading message
-            newTab.document.write(`
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Loading ${fileName}</title>
-                    <style>
-                        body { 
-                            font-family: Arial, sans-serif; 
-                            display: flex; 
-                            justify-content: center; 
-                            align-items: center; 
-                            height: 100vh; 
-                            margin: 0; 
-                            background: #f5f5f5;
-                        }
-                        .loading-container {
-                            text-align: center;
-                            padding: 20px;
-                            background: white;
-                            border-radius: 8px;
-                            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                        }
-                        .spinner {
-                            border: 4px solid #f3f3f3;
-                            border-top: 4px solid #007bff;
-                            border-radius: 50%;
-                            width: 40px;
-                            height: 40px;
-                            animation: spin 1s linear infinite;
-                            margin: 0 auto 15px;
-                        }
-                        @keyframes spin {
-                            0% { transform: rotate(0deg); }
-                            100% { transform: rotate(360deg); }
-                        }
-                    </style>
-                </head>
-                <body>
-                    <div class="loading-container">
-                        <div class="spinner"></div>
-                        <h3>Loading Attachment</h3>
-                        <p>Opening ${fileName}...</p>
-                        <p><small>If the file doesn't load automatically, please wait a moment.</small></p>
-                    </div>
-                </body>
-                </html>
-            `);
-
-            // Auto-redirect to data URL after a short delay
-            setTimeout(() => {
-                newTab.location.href = dataUrl;
-            }, 500);
-        }
-    });
-}
+/* ---------- REMOVED: initAttachmentHandlers function ---------- */
+// This function is no longer needed since we're using the simple approach
 
 /* ---------- Init page ---------- */
 export function initListPage() {

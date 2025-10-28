@@ -2,6 +2,7 @@
 <html>
 
 <head>
+  
   <meta charset="utf-8" />
   <title>Leave Automation - Home</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -48,7 +49,8 @@
         </div>
         <div class="modal-body">
           <div id="auth-msg" aria-live="polite" class="mb-2"></div>
-          <input class="form-control mb-2" id="fullName" placeholder="Full name (for signup)" />
+          <label for="fullName">Full Name</label>
+          <input type="text" id="fullName" name="fullName">
 
           <select id="role" class="form-control mb-2">
             <option value="teacher">Teacher</option>

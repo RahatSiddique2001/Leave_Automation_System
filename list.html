@@ -51,6 +51,27 @@
             </div>
         </div>
         <!-- end modal -->
+
+        <!-- Cancel Confirmation Modal -->
+        <div class="modal fade" id="cancelConfirmModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Confirm Cancellation</h5>
+                        <button class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Are you sure you want to cancel this leave request?</p>
+                        <p class="text-muted"><small>This action will notify the approvers and cannot be undone.</small></p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No, Keep Request</button>
+                        <button type="button" class="btn btn-danger" id="confirmCancelBtn">Yes, Cancel Request</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
     </div>
 
     <script type="module">

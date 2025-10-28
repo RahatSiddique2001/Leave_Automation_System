@@ -16,6 +16,44 @@ import {
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
+// In auth.js - add these imports
+import { DEFAULT_LEAVE_BALANCES, getCurrentAcademicYear } from './leave-config.js';
+
+// Add this function to create/initialize leave balances
+async function initializeUserLeaveBalances(userId) {
+  try {
+    const balanceRef = doc(db, 'leaveBalances', userId);
+    const balanceSnap = await getDoc(balanceRef);
+
+    if (!balanceSnap.exists()) {
+      // Create new balance record
+      await setDoc(balanceRef, {
+        userId: userId,
+        ...DEFAULT_LEAVE_BALANCES,
+        academicYear: getCurrentAcademicYear(),
+        lastUpdated: serverTimestamp()
+      });
+      console.log('Leave balances initialized for user:', userId);
+    } else {
+      // Check if academic year has changed and reset balances if needed
+      const balanceData = balanceSnap.data();
+      const currentAcademicYear = getCurrentAcademicYear();
+
+      if (balanceData.academicYear !== currentAcademicYear) {
+        // Academic year changed - reset balances
+        await updateDoc(balanceRef, {
+          ...DEFAULT_LEAVE_BALANCES,
+          academicYear: currentAcademicYear,
+          lastUpdated: serverTimestamp()
+        });
+        console.log('Leave balances reset for new academic year:', currentAcademicYear);
+      }
+    }
+  } catch (error) {
+    console.error('Error initializing leave balances:', error);
+  }
+}
+
 /* ---------- UI helpers ---------- */
 function el(id) {
   return document.getElementById(id);
@@ -159,6 +197,8 @@ async function doSignUp() {
   const email = el('email')?.value.trim() || '';
   const password = el('password')?.value || '';
   const department = el('department')?.value || '';
+  
+
 
   console.log('Sign up attempt', { email, role, teacherId, fullName, department });
 
@@ -209,6 +249,9 @@ async function doSignUp() {
     // Save a user profile doc in Firestore (users/{uid})
     const userDocRef = doc(db, 'users', cred.user.uid);
     await setDoc(userDocRef, userData);
+
+      // After saving user profile, add:
+    await initializeUserLeaveBalances(cred.user.uid);
 
     console.log('User profile saved to Firestore with department:', department);
 
