@@ -1,9 +1,7 @@
 // notification-service.js
 
 
-// Debug: Check if db is properly initialized
-console.log('Notification Service: Firestore db instance:', db);
-console.log('Notification Service: Firestore collection function:', collection);
+
 
 import {
     collection,
@@ -17,6 +15,7 @@ import {
     onSnapshot
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 import { db } from './firebase-init.js';
+
 
 class NotificationService {
     // Create a new notification

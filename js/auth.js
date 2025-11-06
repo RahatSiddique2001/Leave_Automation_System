@@ -1,4 +1,8 @@
-// js/auth.js - MODIFIED with FIXED DEPARTMENT LIST
+// js/auth.js - CLEANED VERSION
+// Registration access codes - ONLY FOR REGISTRAR
+const REGISTRATION_CODES = {
+  registrar: "REG2025" // Only registrar needs code
+};
 
 import { auth, db } from './firebase-init.js';
 import {
@@ -41,7 +45,7 @@ async function initializeUserLeaveBalances(userId) {
 
       if (balanceData.academicYear !== currentAcademicYear) {
         // Academic year changed - reset balances
-        await updateDoc(balanceRef, {
+        await setDoc(balanceRef, {
           ...DEFAULT_LEAVE_BALANCES,
           academicYear: currentAcademicYear,
           lastUpdated: serverTimestamp()
@@ -74,7 +78,7 @@ function clearAuthMsg() {
   if (elMsg) elMsg.textContent = '';
 }
 
-// NEW: Fixed department list for your university
+// Fixed department list for your university
 const FIXED_DEPARTMENTS = [
   "Department of Accounting and Information Systems",
   "Department of Agronomy and Agricultural Extension",
@@ -137,33 +141,38 @@ const FIXED_DEPARTMENTS = [
   "Department of Zoology"
 ];
 
-// NEW: Simplified function to populate departments dropdown
+// Simplified function to populate departments dropdown
 function populateDepartments() {
+
+  const passwordInput = el('REG2025');
+  if (passwordInput) {
+    if (selectedRole === 'registrar') {
+      passwordInput.placeholder = 'Enter Registrar Access Code';
+    } else {
+      passwordInput.placeholder = 'Password';
+    }
+  }
   const roleSelect = el('role');
   const departmentGroup = el('department-group');
   const departmentSelect = el('department');
 
   if (!roleSelect || !departmentGroup || !departmentSelect) return;
 
-  // Show department field only for HOD and Teacher roles
   const selectedRole = roleSelect.value;
+
   if (selectedRole === 'hod' || selectedRole === 'teacher') {
     departmentGroup.style.display = 'block';
-
-    // Clear existing options except the first
     departmentSelect.innerHTML = '<option value="">Select Department</option>';
-
-    // Add fixed departments to dropdown
     FIXED_DEPARTMENTS.forEach(dept => {
       const option = document.createElement('option');
       option.value = dept;
       option.textContent = dept;
       departmentSelect.appendChild(option);
     });
-
   } else {
     departmentGroup.style.display = 'none';
   }
+  // NO ACCESS CODE LOGIC HERE
 }
 
 function updateUserArea(user, profile) {
@@ -174,14 +183,12 @@ function updateUserArea(user, profile) {
     return;
   }
   const displayName = profile?.fullName || user.displayName || user.email;
-  const teacherIdHtml = profile?.teacherId ? `<div><small>Teacher ID: ${profile.teacherId}</small></div>` : '';
   const roleHtml = profile?.role ? `<div><small>Role: ${profile.role}</small></div>` : '';
   const departmentHtml = profile?.department ? `<div><small>Department: ${profile.department}</small></div>` : '';
 
   area.innerHTML = `
     <div class="card p-2">
       <strong>${displayName}</strong>
-      ${teacherIdHtml}
       ${roleHtml}
       ${departmentHtml}
     </div>
@@ -192,17 +199,24 @@ function updateUserArea(user, profile) {
 async function doSignUp() {
   clearAuthMsg();
   const fullName = el('fullName')?.value.trim() || '';
-  const teacherId = el('teacherId')?.value.trim() || '';
   const role = el('role')?.value || 'teacher';
   const email = el('email')?.value.trim() || '';
   const password = el('password')?.value || '';
   const department = el('department')?.value || '';
-  
+  const accessCode = el('accessCode')?.value.trim() || '';
 
+  console.log('Sign up attempt', { email, role, fullName, department });
 
-  console.log('Sign up attempt', { email, role, teacherId, fullName, department });
+  // Access code validation ONLY for Registrar
+  if (role === 'registrar') {
+    const requiredCode = REGISTRATION_CODES.registrar;
+    if (password !== requiredCode) {
+      showAuthMsg(`Invalid access code for Registrar role. Contact Admin for code.`, true);
+      return;
+    }
+  }
 
-  // NEW: Department validation
+  // Department validation
   if ((role === 'hod' || role === 'teacher') && !department) {
     showAuthMsg('Please select a department', true);
     return;
@@ -231,12 +245,11 @@ async function doSignUp() {
       }
     }
 
-    // NEW: Prepare user data with department
+    // Prepare user data with department
     const userData = {
       uid: cred.user.uid,
       email: email,
       fullName: fullName || null,
-      teacherId: teacherId || null,
       role: role || 'teacher',
       createdAt: serverTimestamp()
     };
@@ -250,12 +263,22 @@ async function doSignUp() {
     const userDocRef = doc(db, 'users', cred.user.uid);
     await setDoc(userDocRef, userData);
 
-      // After saving user profile, add:
+    // After saving user profile, add:
     await initializeUserLeaveBalances(cred.user.uid);
 
     console.log('User profile saved to Firestore with department:', department);
 
     showAuthMsg('Account created and profile saved!');
+
+    // Redirect based on role
+    setTimeout(() => {
+      if (role === 'teacher') {
+        window.location.href = 'apply.html';
+      } else if (role === 'hod' || role === 'registrar') {
+        window.location.href = 'approvals.html';
+      }
+    }, 1500);
+
     // close modal if present
     const modalEl = document.getElementById('authModal');
     if (modalEl) {
@@ -285,6 +308,20 @@ async function doSignIn() {
     console.log('signInWithEmailAndPassword success', cred);
 
     showAuthMsg('Signed in successfully!');
+
+    // Get user role and redirect
+    const userDoc = await getDoc(doc(db, 'users', cred.user.uid));
+    const userData = userDoc.exists() ? userDoc.data() : null;
+    const role = userData?.role || 'teacher';
+
+    setTimeout(() => {
+      if (role === 'teacher') {
+        window.location.href = 'apply.html';
+      } else if (role === 'hod' || role === 'registrar') {
+        window.location.href = 'approvals.html';
+      }
+    }, 1000);
+
     // close modal if present
     const modalEl = document.getElementById('authModal');
     if (modalEl) {
@@ -321,7 +358,7 @@ export function initAuthHandlers() {
   if (btnLogin) btnLogin.addEventListener('click', doSignIn);
   if (btnLogout) btnLogout.addEventListener('click', doSignOut);
 
-  // NEW: Role change listener for department field
+  // Role change listener for department field
   if (roleSelect) {
     roleSelect.addEventListener('change', populateDepartments);
   }

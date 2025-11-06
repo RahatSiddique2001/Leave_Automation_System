@@ -1,0 +1,204 @@
+/* style.css - FIXED VERSION */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding: 0;
+    user-select: auto;
+    -webkit-user-select: auto;
+    pointer-events: auto;
+}
+
+/* Full window background */
+.background-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-image: url('../images/university-bg.jpg');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    z-index: -1;
+}
+
+/* Main content area */
+.main-content {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+}
+
+/* Content container */
+.content-container {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 15px;
+    padding: 3rem;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    max-width: 600px;
+    width: 90%;
+    text-align: center;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* Welcome text */
+.welcome-text {
+    margin-bottom: 2rem;
+}
+
+.welcome-text h1 {
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: #2c3e50;
+    margin-bottom: 0.5rem;
+}
+
+.welcome-text h5 {
+    font-size: 1.3rem;
+    color: #7f8c8d;
+    margin-bottom: 1rem;
+}
+
+/* Homepage Login Button */
+#open-auth {
+    background: #3498db;
+    color: white;
+    border: none;
+    padding: 15px 40px;
+    font-size: 1.2rem;
+    border-radius: 50px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 5px 15px rgba(52, 152, 219, 0.4);
+    margin: 0 auto 2rem auto;
+    display: block;
+    font-weight: 600;
+    width: auto;
+}
+
+#open-auth:hover {
+    background: #2980b9;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(52, 152, 219, 0.6);
+}
+
+/* Instructions */
+.instructions {
+    background: rgba(248, 249, 250, 0.8);
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin-top: 1rem;
+    text-align: center;
+}
+
+.instructions h3 {
+    font-size: 1.3rem;
+    color: #2c3e50;
+    margin-bottom: 1rem;
+    text-align: center;
+}
+
+.instructions ol {
+    text-align: center;
+    display: inline-block;
+    margin: 0 auto;
+}
+
+.instructions p {
+    text-align: center;
+    font-size: 1rem;
+    line-height: 1.6;
+    color: #555;
+    margin: 0;
+}
+
+/* Remove logo styles */
+.university-logo {
+    display: none;
+}
+
+/* container that holds the bar */
+.topbar-wrapper {
+  background: white;
+  padding: 1rem;
+  box-shadow: 0 .125rem .25rem rgba(0,0,0,.075);
+  border-radius: .375rem;
+}
+
+/* main bar - relative so absolute children position relative to it */
+.topbar {
+  position: relative;
+  min-height: 56px;            /* adjust height if you want bigger bar */
+  display: block;
+}
+
+/* left and right panes: pinned to edges */
+.topbar-left,
+.topbar-right {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap; /* keep buttons on one line */
+}
+
+.topbar-left {
+  left: 1rem; /* distance from left edge */
+}
+
+.topbar-right {
+  right: 1rem; /* distance from right edge */
+}
+
+/* center: exact center of viewport (bar) */
+.topbar-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%); /* horizontally center exactly */
+  pointer-events: none; /* ensures clicks go to buttons if overlay overlaps */
+  text-align: center;
+}
+
+/* ensure the heading itself can be interacted (disable pointer-events override) */
+.topbar-center h3 {
+  margin: 0;
+  pointer-events: auto;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .main-content {
+        padding: 1rem;
+    }
+
+    .content-container {
+        padding: 2rem;
+    }
+
+    .welcome-text h1 {
+        font-size: 1.8rem;
+    }
+
+    .welcome-text h5 {
+        font-size: 1.1rem;
+    }
+
+    #open-auth {
+        padding: 12px 30px;
+        font-size: 1.1rem;
+    }
+
+    .instructions {
+        padding: 1rem;
+    }
+}

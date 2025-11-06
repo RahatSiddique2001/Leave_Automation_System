@@ -10,16 +10,32 @@
 
 <body>
     <nav class="navbar navbar-expand bg-light">
-        <div class="container">
-            <a class="navbar-brand" href="index.html">Leave System</a>
-            <div>
-                <a href="index.html" class="btn btn-outline-secondary">Home</a>
+        <div class="dashboard-container">
+            <div class="container">
+                <!-- SIMPLE NAVIGATION - NO EXTRA BOX -->
+                <div class="d-flex justify-content-between mb-4" style="text-align: left; width: 95vw">
+                    <a href="index.html" class="btn btn-outline-primary">Home</a>
+
+                    <div style="text-align: left;">
+                        <a href="list.html" class="btn btn-success me-2">My Requests</a>
+                        
+                    </div>
+                </div>
+
+                <div class="user-welcome">
+                    <h2>Welcome</h2>
+                    <div id="user-area">
+                        <!-- User info will be populated by JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Your existing page content (forms, lists, etc.) -->
             </div>
         </div>
     </nav>
 
     <div class="container py-4">
-        <h2>Apply for Leave</h2>
+        <h2>Apply for Leave:</h2>
 
         <div id="apply-msg" class="mb-3" aria-live="polite"></div>
 

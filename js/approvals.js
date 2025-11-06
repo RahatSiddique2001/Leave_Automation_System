@@ -143,6 +143,19 @@ window.__approvals_openModal = async function (evt) {
         const d = currentRequestDoc.data;
         const departmentHtml = d.department ? `<div><small>Department: ${d.department}</small></div>` : '';
 
+        // YOUR ORIGINAL ATTACHMENT DISPLAY CODE
+        let attachmentsHtml = '';
+        if (d.attachments && Array.isArray(d.attachments) && d.attachments.length) {
+            attachmentsHtml = `<div class="mt-2"><small>Attachments (Refresh if blank): ${d.attachments.map(a => {
+                const href = a.url || (a.data ? a.data : '#');
+                const display = a.name || (typeof a === 'string' ? (a.split('/').pop() || 'Attachment') : 'Attachment');
+                return `<a href="${href}" target="_blank" rel="noopener">${display}</a>`;
+            }).join(', ')}</small></div>`;
+        } else if (d.attachments && typeof d.attachments === 'string') {
+            attachmentsHtml = `<div class="mt-2"><small>Attachments (Refresh if blank): <a href="${d.attachments}" target="_blank" rel="noopener">${d.attachments.split('/').pop()}</a></small></div>`;
+        }
+
+
         md.innerHTML = `
             <div><strong>${d.fullName || d.email}</strong> (<small>${d.email}</small>)</div>
             <div><small>Employee ID: ${d.employeeId || '—'}</small></div> <!-- Fixed: changed 'teacherId' to 'employeeId' -->
@@ -150,8 +163,7 @@ window.__approvals_openModal = async function (evt) {
             <div class="mt-2"><strong>${d.leaveType}</strong> — ${d.startDate} → ${d.endDate}</div> <!-- Fixed: changed 'type' to 'leaveType' -->
             <div class="mt-2"><strong>Number of Days:</strong> ${d.numberOfDays || calculateLeaveDays(d.startDate, d.endDate)}</div>
             <div class="mt-2"><strong>Reason:</strong><br><em>${d.reason}</em></div>
-            <div class="mt-2"><strong>Contact During Leave:</strong> ${d.contactAddress || 'Not provided'}</div>
-            <div class="mt-2"><strong>Emergency Contact:</strong> ${d.emergencyContact || 'Not provided'}</div>
+            ${attachmentsHtml}
         `;
 
         const commentEl = document.getElementById('approverComment');

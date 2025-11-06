@@ -54,13 +54,14 @@ async function loadRequests(uid) {
             </div>
             <p class="mt-2 text-muted">Loading your requests...</p>
         </div>
-`;
+    `;
 
     try {
+        // ONLY CHANGE THE QUERY - keep everything else the same
         const q = query(
-            collection(db, 'requests'),
-            where('uid', '==', uid),
-            orderBy('createdAt', 'desc')
+            collection(db, 'leaveRequests'),  // ✅ Only this line changed
+            where('userId', '==', uid),       // ✅ Only this line changed  
+            orderBy('appliedAt', 'desc')      // ✅ Only this line changed
         );
         const snaps = await getDocs(q);
         if (snaps.empty) {
@@ -68,18 +69,21 @@ async function loadRequests(uid) {
             return;
         }
 
+        // KEEP EVERYTHING ELSE EXACTLY THE SAME
         let html = '<div class="list-group">';
         snaps.forEach(snap => {
             const d = snap.data();
-            const created = formatDate(d.createdAt);
+            const created = formatDate(d.appliedAt || d.createdAt); // ✅ Handle both
             const statusBadgeClass = d.status === 'pending' ? 'warning text-dark' : d.status === 'approved' ? 'success' : d.status === 'rejected' ? 'danger' : 'secondary';
 
             html += `
         <div class="list-group-item">
           <div class="d-flex justify-content-between align-items-start">
             <div>
-              <strong>${d.type}</strong> — ${d.startDate} → ${d.endDate}
-              <div class="mt-1"><small>${d.reason}</small></div>
+                <strong>${d.leaveType || d.type}</strong> — ${d.startDate} → ${d.endDate}
+                <div class="mt-1"><small>${d.reason}</small></div>
+                ${d.status === 'rejected' && d.approverComment ? `<div class="mt-1 text-danger"><small><strong>Rejection Reason:</strong> ${d.approverComment}</small></div>` : ''}
+                ${d.status === 'approved' && d.approverComment ? `<div class="mt-1 text-success"><small><strong>Approver Note:</strong> ${d.approverComment}</small></div>` : ''}
             </div>
             <div class="text-end">
               <div><span class="badge bg-${statusBadgeClass}">${d.status}</span></div>
@@ -99,7 +103,6 @@ async function loadRequests(uid) {
         container.innerHTML = '<div class="text-danger">Failed to load your requests.</div>';
     }
 }
-
 /* ---------- Open details modal (exposed) ---------- */
 window.__list_openDetails = async function (evt) {
     const btn = evt.currentTarget || evt.target;
@@ -107,7 +110,7 @@ window.__list_openDetails = async function (evt) {
     if (!docId) return;
 
     try {
-        const reqRef = doc(db, 'requests', docId);
+        const reqRef = doc(db, 'leaveRequests', docId);
         const snap = await getDoc(reqRef);
         if (!snap.exists()) {
             msg('Request no longer exists', true);
@@ -184,7 +187,7 @@ window.__list_openDetails = async function (evt) {
         md.innerHTML = `
   <div><strong>${d.fullName || d.email}</strong> (<small>${d.email}</small>)</div>
   <div><small>Teacher ID: ${d.teacherId || '—'}</small></div>
-  <div class="mt-2"><strong>${d.type}</strong> — ${d.startDate} → ${d.endDate}</div>
+  <div class="mt-2"><strong>${d.leaveType}</strong> — ${d.startDate} → ${d.endDate}</div>
   <div class="mt-2"><em>${d.reason}</em></div>
   ${attachmentsHtml}
   <div class="mt-2"><small>Status: <strong>${d.status}</strong></small></div>
@@ -205,7 +208,7 @@ window.__list_openDetails = async function (evt) {
                 const confirmModalEl = document.getElementById('cancelConfirmModal');
                 const confirmModal = new bootstrap.Modal(confirmModalEl);
                 confirmModal.show();
-                
+
                 // Set up the confirmation button
                 const confirmCancelBtn = document.getElementById('confirmCancelBtn');
                 confirmCancelBtn.onclick = async () => {
@@ -226,7 +229,7 @@ window.__list_openDetails = async function (evt) {
         // attach handlers (safe attach)
         if (cancelBtn) {
             cancelBtn.onclick = async () => {
-                const confirmCancel = confirm('Are you sure you want to cancel this request? This will notify approvers.');
+                const confirmCancel = confirm('Are you sure you want to cancel this request?');
                 if (!confirmCancel) return;
                 await attemptCancelRequest();
                 try { bsModal.hide(); } catch (e) { }
@@ -253,7 +256,7 @@ window.__list_openDetails = async function (evt) {
 async function saveUserComment(text) {
     if (!activeRequest || !currentUser) return;
     try {
-        const reqRef = doc(db, 'requests', activeRequest.id);
+        const reqRef = doc(db, 'leaveRequests', activeRequest.id);
         // Use a client-side timestamp inside the comment object because serverTimestamp() cannot be embedded in arrayUnion's object
         const commentObj = {
             text: text || null,
@@ -288,7 +291,7 @@ async function attemptCancelRequest() {
     }
 
     try {
-        const reqRef = doc(db, 'requests', activeRequest.id);
+        const reqRef = doc(db, 'leaveRequests', activeRequest.id);
         await updateDoc(reqRef, {
             status: 'cancelled',
             updatedAt: serverTimestamp(),

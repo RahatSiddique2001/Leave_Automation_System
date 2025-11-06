@@ -62,6 +62,16 @@ function getCurrentAcademicYear() {
     return month >= 1 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
 }
 
+/* ---------- Helper: read file as data URL (base64) ---------- */
+function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(fr.result);
+        fr.onerror = (err) => reject(err);
+        fr.readAsDataURL(file);
+    });
+}
+
 function showMsg(text, isError = false) {
     const el = document.getElementById('apply-msg');
     if (!el) {
@@ -195,17 +205,15 @@ async function submitLeave(event, user) {
         const startDate = formData.get('startDate');
         const endDate = formData.get('endDate');
         const reason = formData.get('reason');
-        const contactAddress = formData.get('contactAddress');
-        const emergencyContact = formData.get('emergencyContact');
+
 
         // DEBUG: Log all form values
         console.log('Form values:', {
             leaveType,
-            startDate, 
+            startDate,
             endDate,
             reason,
-            contactAddress,
-            emergencyContact
+            
         });
 
         // Validate required fields
@@ -267,7 +275,36 @@ async function submitLeave(event, user) {
 
         console.log('Found HOD email:', hodEmail);
 
-        
+        // Handle file attachments
+        const attachmentInput = document.getElementById('attachment');
+        const attachmentUrlInput = document.getElementById('attachmentUrl');
+        let attachments = [];
+
+        // Handle file uploads
+        if (attachmentInput && attachmentInput.files.length > 0) {
+            for (let file of attachmentInput.files) {
+                const dataUrl = await readFileAsDataURL(file);
+                attachments.push({
+                    name: file.name,
+                    type: file.type,
+                    size: file.size,
+                    data: dataUrl, // base64 encoded file
+                    uploadedAt: new Date().toISOString()
+                });
+            }
+        }
+
+        // Handle external URL
+        if (attachmentUrlInput && attachmentUrlInput.value.trim()) {
+            attachments.push({
+                name: 'External Document',
+                type: 'url',
+                url: attachmentUrlInput.value.trim(),
+                addedAt: new Date().toISOString()
+            });
+        }
+
+        const routeSelect = document.getElementById('route')?.value;
 
         // Create leave request document
         const requestData = {
@@ -284,13 +321,19 @@ async function submitLeave(event, user) {
             endDate: endDate,
             numberOfDays: numberOfDays,
             reason: reason,
-            contactAddress: contactAddress || '',
-            emergencyContact: emergencyContact || '',
+            
+
+            // Attachments - YOUR ORIGINAL CODE
+            attachments: attachments.length > 0 ? attachments : null,
 
             // Approval chain
             hodEmail: hodEmail,
             registrarEmail: 'registrar@ru.ac.bd',
-            currentStage: hodEmail ? 'pending_hod' : 'pending_registrar',
+            // Get the selected route from the form
+            
+
+            // Apply route-based logic:
+            currentStage: (routeSelect === 'direct_registrar' || !hodEmail) ? 'pending_registrar' : 'pending_hod',
             status: 'pending',
 
             // Timestamps
@@ -306,19 +349,19 @@ async function submitLeave(event, user) {
 
         console.log('Created request doc id =', docRef.id, 'with department:', department);
 
-       // ✅ Create notification for HOD
+        // ✅ Create notification for HOD
         if (hodEmail) {
             try {
                 // Find HOD's user ID
                 const hodQuery = query(
-                    collection(db, 'users'), 
+                    collection(db, 'users'),
                     where('email', '==', hodEmail)
                 );
                 const hodSnapshot = await getDocs(hodQuery);
-                
+
                 if (!hodSnapshot.empty) {
                     const hodUserId = hodSnapshot.docs[0].id;
-                    
+
                     // Wait for notification to be created
                     await notificationService.createNotification({
                         userId: hodUserId,
@@ -329,7 +372,7 @@ async function submitLeave(event, user) {
                         createdAt: serverTimestamp(),
                         requestId: docRef.id
                     });
-                    
+
                     console.log('Notification created for HOD:', hodEmail);
                 }
             } catch (notificationError) {
@@ -469,7 +512,7 @@ export function initApplyPage() {
         const leaveForm = document.getElementById('leaveForm');
         if (leaveForm) {
             console.log('Form found, attaching submit handler...');
-    
+
             leaveForm.addEventListener('submit', (e) => {
                 console.log('Form submitted!', e);
                 console.log('Current user:', user);

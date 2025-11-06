@@ -10,11 +10,26 @@
 
 <body>
     <nav class="navbar navbar-expand bg-light">
-        <div class="container">
-            <a class="navbar-brand" href="index.html">Leave System</a>
-            <div>
-                <a href="apply.html" class="btn btn-primary ms-2">Apply</a>
-                <a href="approvals.html" class="btn btn-warning ms-2">Approvals</a>
+        <div class="dashboard-container">
+            <div class="container">
+                <!-- SIMPLE NAVIGATION - NO EXTRA BOX -->
+                <div class="d-flex justify-content-between mb-4" style="text-align: left; width: 95vw">
+                    <a href="index.html" class="btn btn-outline-primary">Home</a>
+
+                    <div style="text-align: right;">
+                        <a href="list.html" class="btn btn-success me-2">My Requests</a>
+                        <button class="btn btn-outline-danger" id="btn-logout">Logout</button>
+                    </div>
+                </div>
+
+                <div class="user-welcome">
+                    <h2>Welcome</h2>
+                    <div id="user-area">
+                        <!-- User info will be populated by JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Your existing page content (forms, lists, etc.) -->
             </div>
         </div>
     </nav>
@@ -62,16 +77,18 @@
                     </div>
                     <div class="modal-body">
                         <p>Are you sure you want to cancel this leave request?</p>
-                        <p class="text-muted"><small>This action will notify the approvers and cannot be undone.</small></p>
+                        <p class="text-muted"><small>This action will notify the approvers and cannot be undone.</small>
+                        </p>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No, Keep Request</button>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No, Keep
+                            Request</button>
                         <button type="button" class="btn btn-danger" id="confirmCancelBtn">Yes, Cancel Request</button>
                     </div>
                 </div>
             </div>
         </div>
-        
+
     </div>
 
     <script type="module">
